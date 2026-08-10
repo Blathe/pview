@@ -21,6 +21,7 @@ pub struct App {
     pub mem_history: VecDeque<u64>, // MB
 
     pub cpu_current: f32,
+    pub cpu_peak: f32,
     pub mem_current_mb: u64,
     pub mem_peak_mb: u64,
 
@@ -63,6 +64,7 @@ impl App {
             mem_history: VecDeque::with_capacity(HISTORY_LEN),
 
             cpu_current: initial.cpu_usage,
+            cpu_peak: initial.cpu_usage,
             mem_current_mb: initial.memory_bytes / 1_000_000,
             mem_peak_mb: initial.memory_bytes / 1_000_000,
 
@@ -113,6 +115,7 @@ impl App {
         self.run_time_secs = sample.run_time_secs;
 
         self.cpu_current = sample.cpu_usage;
+        self.cpu_peak = self.cpu_peak.max(self.cpu_current);
         self.mem_current_mb = sample.memory_bytes / 1_000_000;
         self.mem_peak_mb = self.mem_peak_mb.max(self.mem_current_mb);
 
