@@ -2,7 +2,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols::Marker;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Axis, Block, Borders, Chart, Clear, Dataset, GraphType, Paragraph};
+use ratatui::widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, Paragraph};
 use ratatui::Frame;
 
 use crate::app::App;
@@ -14,8 +14,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
-            Constraint::Percentage(40),
+            Constraint::Percentage(45),
             Constraint::Length(4),
+            Constraint::Length(5),
             Constraint::Fill(1),
             Constraint::Length(1),
         ])
@@ -25,11 +26,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     draw_cpu_mem_row(frame, rows[1], app);
     draw_disk_panel(frame, rows[2], app);
     draw_process_panel(frame, rows[3], app);
-    draw_footer(frame, rows[4], app);
-
-    if app.help_visible {
-        draw_help(frame, area);
-    }
+    draw_footer(frame, rows[5], app);
 }
 
 fn draw_top_bar(frame: &mut Frame, area: Rect, app: &App) {
@@ -64,44 +61,57 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(area);
 
-    let cpu_window_peak = app.cpu_history.iter().copied().fold(0.0f32, f32::max);
+    let window_secs = HISTORY_LEN as f64 * app.tick_interval.as_secs_f64();
+    let time_labels = (format!("{window_secs:.0}s"), "0s".to_string());
+
     draw_stat_panel(
         frame,
         cols[0],
         "CPU",
-        format!("{:.1}%", app.cpu_current),
+        Some(format!("{:.1}%", app.cpu_current)),
         app.cpu_history.iter().map(|v| *v as f64).collect(),
         100.0,
-        Some(("0%", "100%")),
-        "CPU Peak",
-        format!("{cpu_window_peak:.1}%"),
+        Some(("0%".to_string(), "100%".to_string())),
+        time_labels.clone(),
     );
 
-    let mem_max = app.mem_history.iter().copied().max().unwrap_or(1).max(1) as f64;
-    let mem_window_peak = app.mem_history.iter().copied().max().unwrap_or(0);
+    let mem_total_mb = app.mem_total_mb.max(1) as f64;
     draw_stat_panel(
         frame,
         cols[1],
         "MEMORY",
-        format!("{} MB", app.mem_current_mb),
+        Some(format!(
+            "{} MB / {}",
+            app.mem_current_mb,
+            format_mem_total(app.mem_total_mb)
+        )),
         app.mem_history.iter().map(|v| *v as f64).collect(),
-        mem_max,
-        None,
-        "Peak",
-        format!("{mem_window_peak} MB"),
+        mem_total_mb,
+        Some(("0%".to_string(), "100%".to_string())),
+        time_labels,
     );
+}
+
+/// Formats total system memory in GB, rounding to a whole number when close
+/// to one (e.g. 32 GB) and otherwise showing one decimal place.
+fn format_mem_total(total_mb: u64) -> String {
+    let total_gb = total_mb as f64 / 1024.0;
+    if (total_gb - total_gb.round()).abs() < 0.05 {
+        format!("{:.0} GB", total_gb.round())
+    } else {
+        format!("{total_gb:.1} GB")
+    }
 }
 
 fn draw_stat_panel(
     frame: &mut Frame,
     area: Rect,
     title: &str,
-    value: String,
+    value: Option<String>,
     history: Vec<f64>,
     y_max: f64,
-    side_axis_labels: Option<(&str, &str)>,
-    peak_label: &str,
-    peak_value: String,
+    side_axis_labels: Option<(String, String)>,
+    time_labels: (String, String),
 ) {
     let block = Block::default().borders(Borders::ALL).title(title);
     let inner = block.inner(area);
@@ -110,19 +120,44 @@ fn draw_stat_panel(
     let sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
+            Constraint::Length(if value.is_some() { 1 } else { 0 }),
             Constraint::Min(1),
             Constraint::Length(1),
         ])
         .split(inner);
 
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            value,
-            Style::default().add_modifier(Modifier::BOLD),
-        ))),
-        sections[0],
-    );
+    if let Some(value) = value {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                value,
+                Style::default().add_modifier(Modifier::BOLD),
+            ))),
+            sections[0],
+        );
+    }
+
+    let label_width = side_axis_labels
+        .as_ref()
+        .map(|(min_label, max_label)| min_label.len().max(max_label.len()) as u16 + 1)
+        .unwrap_or(0);
+
+    let plot_area = if let Some((min_label, max_label)) = &side_axis_labels {
+        let split = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(label_width), Constraint::Min(1)])
+            .split(sections[1]);
+
+        let label_rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(0), Constraint::Length(1)])
+            .split(split[0]);
+        frame.render_widget(Paragraph::new(max_label.clone()), label_rows[0]);
+        frame.render_widget(Paragraph::new(min_label.clone()), label_rows[2]);
+
+        split[1]
+    } else {
+        sections[1]
+    };
 
     let points: Vec<(f64, f64)> = history
         .iter()
@@ -136,17 +171,26 @@ fn draw_stat_panel(
         .style(Style::default().fg(Color::Cyan))
         .data(&points);
 
-    let mut y_axis = Axis::default().bounds([0.0, y_max.max(1.0)]);
-    if let Some((min_label, max_label)) = side_axis_labels {
-        y_axis = y_axis.labels(vec![Span::raw(min_label), Span::raw(max_label)]);
-    }
-
     let chart = Chart::new(vec![dataset])
         .x_axis(Axis::default().bounds([0.0, (HISTORY_LEN.saturating_sub(1)) as f64]))
-        .y_axis(y_axis);
-    frame.render_widget(chart, sections[1]);
+        .y_axis(Axis::default().bounds([0.0, y_max.max(1.0)]))
+        .block(Block::default().borders(Borders::LEFT | Borders::BOTTOM));
+    frame.render_widget(chart, plot_area);
 
-    render_kv(frame, sections[2], peak_label, peak_value);
+    let (left_time, right_time) = time_labels;
+    let time_row = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(label_width), Constraint::Min(1)])
+        .split(sections[2]);
+    let gap = time_row[1]
+        .width
+        .saturating_sub((left_time.len() + right_time.len()) as u16);
+    let line = Line::from(vec![
+        Span::raw(left_time),
+        Span::raw(" ".repeat(gap as usize)),
+        Span::raw(right_time),
+    ]);
+    frame.render_widget(Paragraph::new(line), time_row[1]);
 }
 
 fn draw_disk_panel(frame: &mut Frame, area: Rect, app: &App) {
@@ -195,17 +239,15 @@ fn draw_process_panel(frame: &mut Frame, area: Rect, app: &App) {
 
     let left = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1); 3])
+        .constraints([Constraint::Length(1); 2])
         .split(cols[0]);
     let right = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1); 4])
+        .constraints([Constraint::Length(1); 3])
         .split(cols[1]);
 
-    let (status_text, status_color) = status_display(app);
     render_kv(frame, left[0], "Uptime", format_duration(app.run_time_secs));
-    render_kv_styled(frame, left[1], "Status", status_text, status_color);
-    render_kv(frame, left[2], "Executable", app.exe_path.clone());
+    render_kv(frame, left[1], "Executable", app.exe_path.clone());
 
     render_kv(frame, right[0], "Started", format_unix_secs(app.started_at_unix_secs));
     render_kv(
@@ -220,7 +262,6 @@ fn draw_process_panel(frame: &mut Frame, area: Rect, app: &App) {
         "CPU Peak (all time)",
         format!("{:.1}%", app.cpu_peak),
     );
-    render_kv(frame, right[3], "Refresh", format!("{} ms", app.tick_interval.as_millis()));
 }
 
 fn render_kv(frame: &mut Frame, area: Rect, key: &str, value: String) {
@@ -236,47 +277,8 @@ fn render_kv_styled(frame: &mut Frame, area: Rect, key: &str, value: String, val
 }
 
 fn draw_footer(frame: &mut Frame, area: Rect, _app: &App) {
-    let line = Line::from(Span::raw(
-        "  q Quit    p Pause    r Reset graphs    ? Help",
-    ));
+    let line = Line::from(Span::raw("  q Quit    p Pause    r Reset graphs"));
     frame.render_widget(Paragraph::new(line), area);
-}
-
-fn draw_help(frame: &mut Frame, area: Rect) {
-    let popup = centered_rect(50, 40, area);
-    frame.render_widget(Clear, popup);
-    let block = Block::default().borders(Borders::ALL).title("Help");
-    let text = vec![
-        Line::from("pview - single-process monitoring TUI"),
-        Line::from(""),
-        Line::from("q  Quit"),
-        Line::from("p  Pause / resume refresh"),
-        Line::from("r  Reset history graphs"),
-        Line::from("?  Toggle this help"),
-        Line::from(""),
-        Line::from("Press any key to close"),
-    ];
-    frame.render_widget(Paragraph::new(text).block(block), popup);
-}
-
-fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
-    let vertical = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(area);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(vertical[1])[1]
 }
 
 fn format_duration(total_secs: u64) -> String {

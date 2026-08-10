@@ -12,6 +12,7 @@ pub struct App {
     pub process_name: String,
     pub exe_path: String,
     pub started_at_unix_secs: u64,
+    pub mem_total_mb: u64,
     pub tick_interval: Duration,
 
     pub status: ProcessStatus,
@@ -36,7 +37,6 @@ pub struct App {
     last_sample_at: Instant,
 
     pub paused: bool,
-    pub help_visible: bool,
     pub should_quit: bool,
     pub exited: bool,
 }
@@ -47,6 +47,7 @@ impl App {
         process_name: String,
         exe_path: String,
         started_at_unix_secs: u64,
+        mem_total_mb: u64,
         tick_interval: Duration,
         initial: Sample,
     ) -> Self {
@@ -55,6 +56,7 @@ impl App {
             process_name,
             exe_path,
             started_at_unix_secs,
+            mem_total_mb,
             tick_interval,
 
             status: initial.status,
@@ -79,7 +81,6 @@ impl App {
             last_sample_at: Instant::now(),
 
             paused: false,
-            help_visible: false,
             should_quit: false,
             exited: false,
         }
@@ -131,11 +132,6 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyCode) {
-        if self.help_visible {
-            self.help_visible = false;
-            return;
-        }
-
         match key {
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Char('p') => self.paused = !self.paused,
@@ -143,7 +139,6 @@ impl App {
                 self.cpu_history.clear();
                 self.mem_history.clear();
             }
-            KeyCode::Char('?') => self.help_visible = true,
             _ => {}
         }
     }
