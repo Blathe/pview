@@ -68,6 +68,7 @@ fn main() -> ExitCode {
             .unwrap_or_else(|| "<unknown>".to_string());
         started_at_unix_secs = process.start_time();
     }
+    let mem_total_mb = sys.total_memory() / 1_000_000;
 
     let tick_interval = Duration::from_millis(args.interval);
     let mut monitor = Monitor::new(sys, pid);
@@ -84,6 +85,7 @@ fn main() -> ExitCode {
         process_name,
         exe_path,
         started_at_unix_secs,
+        mem_total_mb,
         tick_interval,
         initial_sample,
     );
