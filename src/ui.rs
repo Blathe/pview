@@ -14,9 +14,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
-            Constraint::Percentage(35),
-            Constraint::Percentage(25),
-            Constraint::Percentage(30),
+            Constraint::Percentage(40),
+            Constraint::Length(4),
+            Constraint::Fill(1),
             Constraint::Length(1),
         ])
         .split(area);
@@ -56,6 +56,7 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(area);
 
+    let cpu_window_peak = app.cpu_history.iter().copied().fold(0.0f32, f32::max);
     draw_stat_panel(
         frame,
         cols[0],
@@ -63,11 +64,13 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
         format!("{:.1}%", app.cpu_current),
         app.cpu_history.iter().map(|v| *v as f64).collect(),
         100.0,
-        "0%",
-        "100%",
+        Some(("0%", "100%")),
+        "CPU Peak",
+        format!("{cpu_window_peak:.1}%"),
     );
 
     let mem_max = app.mem_history.iter().copied().max().unwrap_or(1).max(1) as f64;
+    let mem_window_peak = app.mem_history.iter().copied().max().unwrap_or(0);
     draw_stat_panel(
         frame,
         cols[1],
@@ -75,8 +78,9 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
         format!("{} MB", app.mem_current_mb),
         app.mem_history.iter().map(|v| *v as f64).collect(),
         mem_max,
-        "0 MB",
-        &format!("{mem_max:.0} MB"),
+        None,
+        "Peak",
+        format!("{mem_window_peak} MB"),
     );
 }
 
@@ -87,8 +91,9 @@ fn draw_stat_panel(
     value: String,
     history: Vec<f64>,
     y_max: f64,
-    axis_min: &str,
-    axis_max: &str,
+    side_axis_labels: Option<(&str, &str)>,
+    peak_label: &str,
+    peak_value: String,
 ) {
     let block = Block::default().borders(Borders::ALL).title(title);
     let inner = block.inner(area);
@@ -123,17 +128,17 @@ fn draw_stat_panel(
         .style(Style::default().fg(Color::Cyan))
         .data(&points);
 
+    let mut y_axis = Axis::default().bounds([0.0, y_max.max(1.0)]);
+    if let Some((min_label, max_label)) = side_axis_labels {
+        y_axis = y_axis.labels(vec![Span::raw(min_label), Span::raw(max_label)]);
+    }
+
     let chart = Chart::new(vec![dataset])
         .x_axis(Axis::default().bounds([0.0, (HISTORY_LEN.saturating_sub(1)) as f64]))
-        .y_axis(Axis::default().bounds([0.0, y_max.max(1.0)]));
+        .y_axis(y_axis);
     frame.render_widget(chart, sections[1]);
 
-    let axis = Line::from(vec![
-        Span::raw(axis_min.to_string()),
-        Span::raw(" ".repeat(inner.width.saturating_sub((axis_min.len() + axis_max.len()) as u16) as usize)),
-        Span::raw(axis_max.to_string()),
-    ]);
-    frame.render_widget(Paragraph::new(axis), sections[2]);
+    render_kv(frame, sections[2], peak_label, peak_value);
 }
 
 fn draw_disk_panel(frame: &mut Frame, area: Rect, app: &App) {
@@ -141,28 +146,31 @@ fn draw_disk_panel(frame: &mut Frame, area: Rect, app: &App) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-        ])
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Length(1)])
         .split(inner);
+    let top = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(rows[0]);
+    let bottom = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(rows[1]);
 
-    render_kv(frame, cols[0], "Read", format!("{:.2} MB/s", app.disk_read_rate_mb_s));
-    render_kv(frame, cols[1], "Write", format!("{:.2} MB/s", app.disk_write_rate_mb_s));
+    render_kv(frame, top[0], "Read", format!("{:.2} MB/s", app.disk_read_rate_mb_s));
     render_kv(
         frame,
-        cols[2],
-        "Total R",
+        top[1],
+        "Total Read",
         format!("{:.2} MB", app.disk_read_bytes_session as f64 / 1_000_000.0),
     );
+    render_kv(frame, bottom[0], "Write", format!("{:.2} MB/s", app.disk_write_rate_mb_s));
     render_kv(
         frame,
-        cols[3],
-        "Total W",
+        bottom[1],
+        "Total Write",
         format!("{:.2} MB", app.disk_write_bytes_session as f64 / 1_000_000.0),
     );
 }
@@ -183,7 +191,7 @@ fn draw_process_panel(frame: &mut Frame, area: Rect, app: &App) {
         .split(cols[0]);
     let right = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1); 3])
+        .constraints([Constraint::Length(1); 4])
         .split(cols[1]);
 
     render_kv(frame, left[0], "Uptime", format_duration(app.run_time_secs));
@@ -191,8 +199,19 @@ fn draw_process_panel(frame: &mut Frame, area: Rect, app: &App) {
     render_kv(frame, left[2], "Executable", app.exe_path.clone());
 
     render_kv(frame, right[0], "Started", format_unix_secs(app.started_at_unix_secs));
-    render_kv(frame, right[1], "Memory Peak", format!("{} MB", app.mem_peak_mb));
-    render_kv(frame, right[2], "Refresh", format!("{} ms", app.tick_interval.as_millis()));
+    render_kv(
+        frame,
+        right[1],
+        "Memory Peak (all time)",
+        format!("{} MB", app.mem_peak_mb),
+    );
+    render_kv(
+        frame,
+        right[2],
+        "CPU Peak (all time)",
+        format!("{:.1}%", app.cpu_peak),
+    );
+    render_kv(frame, right[3], "Refresh", format!("{} ms", app.tick_interval.as_millis()));
 }
 
 fn render_kv(frame: &mut Frame, area: Rect, key: &str, value: String) {
