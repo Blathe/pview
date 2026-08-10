@@ -1,10 +1,12 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
+use ratatui::symbols::Marker;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Sparkline};
+use ratatui::widgets::{Axis, Block, Borders, Chart, Clear, Dataset, GraphType, Paragraph};
 use ratatui::Frame;
 
 use crate::app::App;
+use crate::config::HISTORY_LEN;
 
 pub fn draw(frame: &mut Frame, app: &App) {
     let area = frame.area();
@@ -59,20 +61,22 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
         cols[0],
         "CPU",
         format!("{:.1}%", app.cpu_current),
-        app.cpu_history.iter().map(|v| *v as u64).collect(),
+        app.cpu_history.iter().map(|v| *v as f64).collect(),
+        100.0,
         "0%",
         "100%",
     );
 
-    let mem_max = app.mem_history.iter().copied().max().unwrap_or(1).max(1);
+    let mem_max = app.mem_history.iter().copied().max().unwrap_or(1).max(1) as f64;
     draw_stat_panel(
         frame,
         cols[1],
         "MEMORY",
         format!("{} MB", app.mem_current_mb),
-        app.mem_history.iter().copied().collect(),
+        app.mem_history.iter().map(|v| *v as f64).collect(),
+        mem_max,
         "0 MB",
-        &format!("{mem_max} MB"),
+        &format!("{mem_max:.0} MB"),
     );
 }
 
@@ -81,7 +85,8 @@ fn draw_stat_panel(
     area: Rect,
     title: &str,
     value: String,
-    history: Vec<u64>,
+    history: Vec<f64>,
+    y_max: f64,
     axis_min: &str,
     axis_max: &str,
 ) {
@@ -106,10 +111,22 @@ fn draw_stat_panel(
         sections[0],
     );
 
-    let sparkline = Sparkline::default()
-        .data(&history)
-        .style(Style::default().fg(Color::Cyan));
-    frame.render_widget(sparkline, sections[1]);
+    let points: Vec<(f64, f64)> = history
+        .iter()
+        .enumerate()
+        .map(|(i, v)| (i as f64, *v))
+        .collect();
+
+    let dataset = Dataset::default()
+        .marker(Marker::Braille)
+        .graph_type(GraphType::Line)
+        .style(Style::default().fg(Color::Cyan))
+        .data(&points);
+
+    let chart = Chart::new(vec![dataset])
+        .x_axis(Axis::default().bounds([0.0, (HISTORY_LEN.saturating_sub(1)) as f64]))
+        .y_axis(Axis::default().bounds([0.0, y_max.max(1.0)]));
+    frame.render_widget(chart, sections[1]);
 
     let axis = Line::from(vec![
         Span::raw(axis_min.to_string()),
