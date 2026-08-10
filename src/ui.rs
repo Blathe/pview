@@ -33,21 +33,29 @@ pub fn draw(frame: &mut Frame, app: &App) {
 }
 
 fn draw_top_bar(frame: &mut Frame, area: Rect, app: &App) {
-    let status = if app.paused { " PAUSED" } else { "" };
+    let (status_text, status_color) = status_display(app);
     let line = Line::from(vec![
         Span::raw(format!("{}  ", app.process_name)),
         Span::raw(format!("PID {}  ", app.pid)),
-        Span::styled(
-            format!("{:?}", app.status),
-            Style::default().fg(Color::Green),
-        ),
-        Span::styled(status, Style::default().fg(Color::Yellow)),
+        Span::styled(status_text, Style::default().fg(status_color)),
     ]);
     let block = Block::default()
         .borders(Borders::ALL)
         .title("PVIEW")
         .title_style(Style::default().add_modifier(Modifier::BOLD));
     frame.render_widget(Paragraph::new(line).block(block), area);
+}
+
+/// Returns the display text and color for the process/monitoring status,
+/// showing PAUSED (in place of the OS process status) while pview itself
+/// is paused, since the underlying process status stops being meaningful
+/// to the user once pview has stopped refreshing it.
+fn status_display(app: &App) -> (String, Color) {
+    if app.paused {
+        ("PAUSED".to_string(), Color::Yellow)
+    } else {
+        (format!("{:?}", app.status), Color::Green)
+    }
 }
 
 fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
@@ -194,8 +202,9 @@ fn draw_process_panel(frame: &mut Frame, area: Rect, app: &App) {
         .constraints([Constraint::Length(1); 4])
         .split(cols[1]);
 
+    let (status_text, status_color) = status_display(app);
     render_kv(frame, left[0], "Uptime", format_duration(app.run_time_secs));
-    render_kv(frame, left[1], "Status", format!("{:?}", app.status));
+    render_kv_styled(frame, left[1], "Status", status_text, status_color);
     render_kv(frame, left[2], "Executable", app.exe_path.clone());
 
     render_kv(frame, right[0], "Started", format_unix_secs(app.started_at_unix_secs));
@@ -215,9 +224,13 @@ fn draw_process_panel(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_kv(frame: &mut Frame, area: Rect, key: &str, value: String) {
+    render_kv_styled(frame, area, key, value, Color::Reset);
+}
+
+fn render_kv_styled(frame: &mut Frame, area: Rect, key: &str, value: String, value_color: Color) {
     let line = Line::from(vec![
         Span::styled(format!("{key}: "), Style::default().fg(Color::DarkGray)),
-        Span::raw(value),
+        Span::styled(value, Style::default().fg(value_color)),
     ]);
     frame.render_widget(Paragraph::new(line), area);
 }

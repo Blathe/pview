@@ -10,7 +10,7 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use crossterm::event::{self, Event};
+use crossterm::event::{self, Event, KeyEventKind};
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::backend::CrosstermBackend;
@@ -130,7 +130,9 @@ fn run(
 
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                app.handle_key(key.code);
+                if key.kind == KeyEventKind::Press {
+                    app.handle_key(key.code);
+                }
             }
         }
 
