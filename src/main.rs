@@ -2,6 +2,7 @@ mod app;
 mod cli;
 mod config;
 mod monitor;
+mod picker;
 mod process;
 mod ui;
 
@@ -15,7 +16,7 @@ use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
-use sysinfo::{ProcessesToUpdate, System};
+use sysinfo::{Pid, ProcessesToUpdate, System};
 
 use app::App;
 use cli::Args;
@@ -39,23 +40,80 @@ fn main() -> ExitCode {
     let mut sys = System::new_all();
     sys.refresh_processes(ProcessesToUpdate::All, true);
 
-    let pid = match process::resolve_target(&sys, &args.target) {
-        LookupResult::Found(pid) => pid,
-        LookupResult::NotFound => {
-            eprintln!("error: no running process matching '{}'", args.target);
-            return ExitCode::from(1);
-        }
-        LookupResult::Ambiguous(matches) => {
-            eprintln!("error: multiple processes match '{}':", args.target);
-            eprintln!("{:<10} {:<24} STARTED (unix secs)", "PID", "NAME");
-            for m in matches {
-                eprintln!("{:<10} {:<24} {}", m.pid, m.name, m.start_time);
+    let tick_interval = Duration::from_millis(args.interval);
+
+    // Terminal setup is deliberately lazy: it only happens once we know
+    // we're either showing the picker or going straight to the dashboard,
+    // so a NotFound error can still print to a plain, untouched terminal.
+    let (guard, pid): (TerminalGuard, Pid) = match &args.target {
+        None => {
+            let mut guard = match init_terminal_guard() {
+                Ok(guard) => guard,
+                Err(code) => return code,
+            };
+            match picker::run_picker(&mut guard.terminal, &mut sys, tick_interval, String::new()) {
+                Ok(Some(pid)) => (guard, pid),
+                Ok(None) => {
+                    drop(guard);
+                    return ExitCode::SUCCESS;
+                }
+                Err(err) => {
+                    drop(guard);
+                    eprintln!("error: {err}");
+                    return ExitCode::from(4);
+                }
             }
-            eprintln!("re-run with a specific PID");
-            return ExitCode::from(2);
         }
+        Some(target) => match process::resolve_target(&sys, target) {
+            LookupResult::NotFound => {
+                eprintln!("error: no running process matching '{target}'");
+                return ExitCode::from(1);
+            }
+            LookupResult::Ambiguous => {
+                let mut guard = match init_terminal_guard() {
+                    Ok(guard) => guard,
+                    Err(code) => return code,
+                };
+                match picker::run_picker(&mut guard.terminal, &mut sys, tick_interval, target.clone()) {
+                    Ok(Some(pid)) => (guard, pid),
+                    Ok(None) => {
+                        drop(guard);
+                        return ExitCode::SUCCESS;
+                    }
+                    Err(err) => {
+                        drop(guard);
+                        eprintln!("error: {err}");
+                        return ExitCode::from(4);
+                    }
+                }
+            }
+            LookupResult::Found(pid) => {
+                let guard = match init_terminal_guard() {
+                    Ok(guard) => guard,
+                    Err(code) => return code,
+                };
+                (guard, pid)
+            }
+        },
     };
 
+    run_dashboard(guard, sys, pid, tick_interval)
+}
+
+fn init_terminal_guard() -> Result<TerminalGuard, ExitCode> {
+    match init_terminal() {
+        Ok(terminal) => {
+            install_panic_hook();
+            Ok(TerminalGuard { terminal })
+        }
+        Err(err) => {
+            eprintln!("error: failed to initialize terminal: {err}");
+            Err(ExitCode::from(4))
+        }
+    }
+}
+
+fn run_dashboard(mut guard: TerminalGuard, sys: System, pid: Pid, tick_interval: Duration) -> ExitCode {
     let process_name;
     let exe_path;
     let started_at_unix_secs;
@@ -70,11 +128,11 @@ fn main() -> ExitCode {
     }
     let mem_total_mb = sys.total_memory() / 1_000_000;
 
-    let tick_interval = Duration::from_millis(args.interval);
     let mut monitor = Monitor::new(sys, pid);
     let initial_sample = match monitor.sample() {
         Ok(sample) => sample,
         Err(MonitorError::ProcessExited) => {
+            drop(guard);
             eprintln!("error: process exited before monitoring could start");
             return ExitCode::from(3);
         }
@@ -89,16 +147,6 @@ fn main() -> ExitCode {
         tick_interval,
         initial_sample,
     );
-
-    let mut guard = match init_terminal() {
-        Ok(terminal) => TerminalGuard { terminal },
-        Err(err) => {
-            eprintln!("error: failed to initialize terminal: {err}");
-            return ExitCode::from(4);
-        }
-    };
-
-    install_panic_hook();
 
     if let Err(err) = run(&mut guard.terminal, &mut app, &mut monitor) {
         drop(guard);

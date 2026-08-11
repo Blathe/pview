@@ -1,15 +1,9 @@
 use sysinfo::{Pid, System};
 
-pub struct ProcessMatch {
-    pub pid: Pid,
-    pub name: String,
-    pub start_time: u64,
-}
-
 pub enum LookupResult {
     Found(Pid),
     NotFound,
-    Ambiguous(Vec<ProcessMatch>),
+    Ambiguous,
 }
 
 /// Resolve a user-supplied target (a PID or an exact, case-insensitive process
@@ -23,20 +17,16 @@ pub fn resolve_target(sys: &System, target: &str) -> LookupResult {
         };
     }
 
-    let matches: Vec<ProcessMatch> = sys
+    let matches: Vec<Pid> = sys
         .processes()
         .values()
         .filter(|p| p.name().to_string_lossy().eq_ignore_ascii_case(target))
-        .map(|p| ProcessMatch {
-            pid: p.pid(),
-            name: p.name().to_string_lossy().into_owned(),
-            start_time: p.start_time(),
-        })
+        .map(|p| p.pid())
         .collect();
 
     match matches.len() {
         0 => LookupResult::NotFound,
-        1 => LookupResult::Found(matches[0].pid),
-        _ => LookupResult::Ambiguous(matches),
+        1 => LookupResult::Found(matches[0]),
+        _ => LookupResult::Ambiguous,
     }
 }
