@@ -6,7 +6,13 @@ Built with [ratatui](https://github.com/ratatui-org/ratatui), [crossterm](https:
 
 ## Screenshots
 
-<!-- Add a screenshot or GIF of pview in action here. -->
+**Dashboard**
+
+![pview monitoring dashboard](images/monitor.jpg)
+
+**Process picker**
+
+![pview interactive process picker](images/process_selector.jpg)
 
 ## Features
 
