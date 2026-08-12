@@ -126,7 +126,7 @@ fn run_dashboard(mut guard: TerminalGuard, sys: System, pid: Pid, tick_interval:
             .unwrap_or_else(|| "<unknown>".to_string());
         started_at_unix_secs = process.start_time();
     }
-    let mem_total_mb = sys.total_memory() / 1_000_000;
+    let mem_total_mb = sys.total_memory() / config::BYTES_PER_MB;
 
     let mut monitor = Monitor::new(sys, pid);
     let initial_sample = match monitor.sample() {

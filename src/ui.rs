@@ -6,7 +6,7 @@ use ratatui::widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, Paragrap
 use ratatui::Frame;
 
 use crate::app::App;
-use crate::config::HISTORY_LEN;
+use crate::config::{BYTES_PER_MB, HISTORY_LEN};
 
 pub fn draw(frame: &mut Frame, app: &App) {
     let area = frame.area();
@@ -216,14 +216,20 @@ fn draw_disk_panel(frame: &mut Frame, area: Rect, app: &App) {
         frame,
         top[1],
         "Total Read",
-        format!("{:.2} MB", app.disk_read_bytes_session as f64 / 1_000_000.0),
+        format!(
+            "{:.2} MB",
+            app.disk_read_bytes_session as f64 / BYTES_PER_MB as f64
+        ),
     );
     render_kv(frame, bottom[0], "Write", format!("{:.2} MB/s", app.disk_write_rate_mb_s));
     render_kv(
         frame,
         bottom[1],
         "Total Write",
-        format!("{:.2} MB", app.disk_write_bytes_session as f64 / 1_000_000.0),
+        format!(
+            "{:.2} MB",
+            app.disk_write_bytes_session as f64 / BYTES_PER_MB as f64
+        ),
     );
 }
 

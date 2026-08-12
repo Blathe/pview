@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use crossterm::event::KeyCode;
 use sysinfo::{Pid, ProcessStatus};
 
-use crate::config::HISTORY_LEN;
+use crate::config::{BYTES_PER_MB, HISTORY_LEN};
 use crate::monitor::Sample;
 
 pub struct App {
@@ -67,8 +67,8 @@ impl App {
 
             cpu_current: initial.cpu_usage,
             cpu_peak: initial.cpu_usage,
-            mem_current_mb: initial.memory_bytes / 1_000_000,
-            mem_peak_mb: initial.memory_bytes / 1_000_000,
+            mem_current_mb: initial.memory_bytes / BYTES_PER_MB,
+            mem_peak_mb: initial.memory_bytes / BYTES_PER_MB,
 
             disk_read_rate_mb_s: 0.0,
             disk_write_rate_mb_s: 0.0,
@@ -97,8 +97,8 @@ impl App {
             let write_delta = sample
                 .disk_total_written_bytes
                 .saturating_sub(self.last_write_bytes);
-            self.disk_read_rate_mb_s = read_delta as f32 / elapsed / 1_000_000.0;
-            self.disk_write_rate_mb_s = write_delta as f32 / elapsed / 1_000_000.0;
+            self.disk_read_rate_mb_s = read_delta as f32 / elapsed / BYTES_PER_MB as f32;
+            self.disk_write_rate_mb_s = write_delta as f32 / elapsed / BYTES_PER_MB as f32;
         }
 
         self.last_read_bytes = sample.disk_total_read_bytes;
@@ -117,7 +117,7 @@ impl App {
 
         self.cpu_current = sample.cpu_usage;
         self.cpu_peak = self.cpu_peak.max(self.cpu_current);
-        self.mem_current_mb = sample.memory_bytes / 1_000_000;
+        self.mem_current_mb = sample.memory_bytes / BYTES_PER_MB;
         self.mem_peak_mb = self.mem_peak_mb.max(self.mem_current_mb);
 
         if self.cpu_history.len() == HISTORY_LEN {
