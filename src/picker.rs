@@ -15,6 +15,8 @@ use sysinfo::{Pid, ProcessesToUpdate, System};
 struct PickerEntry {
     pid: Pid,
     name: String,
+    parent: Option<Pid>,
+    is_group_root: bool,
 }
 
 struct PickerState {
@@ -82,14 +84,50 @@ impl PickerState {
 }
 
 fn snapshot_processes(sys: &System, own_pid: Pid) -> Vec<PickerEntry> {
-    sys.processes()
+    let mut entries: Vec<PickerEntry> = sys
+        .processes()
         .values()
         .filter(|p| p.pid() != own_pid)
         .map(|p| PickerEntry {
             pid: p.pid(),
             name: p.name().to_string_lossy().into_owned(),
+            parent: p.parent(),
+            is_group_root: false,
         })
-        .collect()
+        .collect();
+
+    mark_group_roots(&mut entries);
+    entries
+}
+
+/// Tags each entry whose name has 2+ concurrent instances with whether it's
+/// the root of that name-group, i.e. none of the *other* same-named
+/// processes is its OS parent. This is what distinguishes a top-level
+/// chrome.exe (parented by e.g. explorer.exe) from its own renderer/GPU
+/// child chrome.exe processes (parented by another chrome.exe).
+fn mark_group_roots(entries: &mut [PickerEntry]) {
+    use std::collections::{HashMap, HashSet};
+
+    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, entry) in entries.iter().enumerate() {
+        groups.entry(entry.name.to_lowercase()).or_default().push(i);
+    }
+
+    for indices in groups.values() {
+        if indices.len() < 2 {
+            continue;
+        }
+
+        let pids_in_group: HashSet<Pid> = indices.iter().map(|&i| entries[i].pid).collect();
+
+        for &i in indices {
+            let parent_is_sibling = entries[i]
+                .parent
+                .map(|p| pids_in_group.contains(&p))
+                .unwrap_or(false);
+            entries[i].is_group_root = !parent_is_sibling;
+        }
+    }
 }
 
 enum PickerAction {
@@ -217,7 +255,8 @@ fn draw_results(frame: &mut Frame, area: Rect, state: &PickerState) {
         .iter()
         .map(|&i| {
             let entry = &state.all[i];
-            ListItem::new(format!("PID: {} | {}", entry.pid, entry.name))
+            let suffix = if entry.is_group_root { " (parent)" } else { "" };
+            ListItem::new(format!("PID: {} | {}{}", entry.pid, entry.name, suffix))
         })
         .collect();
 
