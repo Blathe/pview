@@ -9,3 +9,9 @@ crossterm = "0.28"
 clap = { version = "4", features = ["derive"] }
 sysinfo = "0.32"
 fuzzy-matcher = "0.3"
+
+[profile.release]
+codegen-units = 1 # Allows compiler to perform better optimization.
+lto = true # Enables Link-time Optimization.
+opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
+strip = true # Ensures debug symbols are removed.
