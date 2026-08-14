@@ -41,21 +41,26 @@ impl Monitor {
         self.sys
             .refresh_processes(ProcessesToUpdate::Some(&[self.pid]), true);
 
-        let process = self.sys.process(self.pid).ok_or(MonitorError::ProcessExited)?;
+        let process = self
+            .sys
+            .process(self.pid)
+            .ok_or(MonitorError::ProcessExited)?;
         let disk = process.disk_usage();
 
-        let (storage_total_bytes, storage_available_bytes, storage_mount_point) =
-            match self.storage_disk_index.and_then(|i| self.disks.list_mut().get_mut(i)) {
-                Some(storage_disk) => {
-                    storage_disk.refresh();
-                    (
-                        storage_disk.total_space(),
-                        storage_disk.available_space(),
-                        storage_disk.mount_point().display().to_string(),
-                    )
-                }
-                None => (0, 0, "?".to_string()),
-            };
+        let (storage_total_bytes, storage_available_bytes, storage_mount_point) = match self
+            .storage_disk_index
+            .and_then(|i| self.disks.list_mut().get_mut(i))
+        {
+            Some(storage_disk) => {
+                storage_disk.refresh();
+                (
+                    storage_disk.total_space(),
+                    storage_disk.available_space(),
+                    storage_disk.mount_point().display().to_string(),
+                )
+            }
+            None => (0, 0, "?".to_string()),
+        };
 
         Ok(Sample {
             cpu_usage: process.cpu_usage(),

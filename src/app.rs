@@ -4,7 +4,9 @@ use std::time::{Duration, Instant};
 use crossterm::event::KeyCode;
 use sysinfo::{Pid, ProcessStatus};
 
-use crate::config::{BYTES_PER_MB, HISTORY_LEN, MEM_TREND_MAX_SAMPLES, MEM_TREND_SAMPLE_INTERVAL_SECS};
+use crate::config::{
+    BYTES_PER_MB, HISTORY_LEN, MEM_TREND_MAX_SAMPLES, MEM_TREND_SAMPLE_INTERVAL_SECS,
+};
 use crate::monitor::Sample;
 
 pub struct App {
@@ -124,8 +126,11 @@ impl App {
                 .saturating_sub(self.last_write_bytes);
             self.disk_read_rate_mb_s = read_delta as f32 / elapsed / BYTES_PER_MB as f32;
             self.disk_write_rate_mb_s = write_delta as f32 / elapsed / BYTES_PER_MB as f32;
-            self.disk_read_rate_peak_mb_s = self.disk_read_rate_peak_mb_s.max(self.disk_read_rate_mb_s);
-            self.disk_write_rate_peak_mb_s = self.disk_write_rate_peak_mb_s.max(self.disk_write_rate_mb_s);
+            self.disk_read_rate_peak_mb_s =
+                self.disk_read_rate_peak_mb_s.max(self.disk_read_rate_mb_s);
+            self.disk_write_rate_peak_mb_s = self
+                .disk_write_rate_peak_mb_s
+                .max(self.disk_write_rate_mb_s);
         }
 
         self.last_read_bytes = sample.disk_total_read_bytes;

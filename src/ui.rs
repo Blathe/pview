@@ -1,13 +1,13 @@
 use std::time::Duration;
 
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::Frame;
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph, Sparkline};
-use ratatui::Frame;
 
 use crate::app::App;
-use crate::config::{BYTES_PER_MB, HISTORY_LEN};
+use crate::config::{APP_VERSION, BYTES_PER_MB, HISTORY_LEN};
 
 const CPU_COLOR: Color = Color::Rgb(59, 130, 246); // blue
 const MEM_COLOR: Color = Color::Rgb(249, 115, 22); // orange
@@ -21,7 +21,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .constraints([
             Constraint::Length(1),
             Constraint::Length(5),
-            Constraint::Length(15),
+            Constraint::Length(20),
             Constraint::Length(11),
             Constraint::Length(7),
             Constraint::Fill(1),
@@ -29,7 +29,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         ])
         .split(area);
 
-    draw_slim_header(frame, rows[0], app);
+    draw_slim_header(frame, rows[0]);
     draw_status_bar(frame, rows[1], app);
     draw_cpu_mem_row(frame, rows[2], app);
     draw_disk_panel(frame, rows[3], app);
@@ -37,14 +37,28 @@ pub fn draw(frame: &mut Frame, app: &App) {
     draw_footer(frame, rows[6], app);
 }
 
-fn draw_slim_header(frame: &mut Frame, area: Rect, app: &App) {
-    let (_, status_color) = status_display(app);
+pub fn draw_slim_header(frame: &mut Frame, area: Rect) {
     let line = Line::from(vec![
-        Span::styled("● ", Style::default().fg(status_color)),
-        Span::styled("PVIEW", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw("  ·  "),
-        Span::raw(app.process_name.clone()),
-    ]);
+        Span::styled(
+            "[pview ● ",
+            Style::default()
+                .fg(Color::LightBlue)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            APP_VERSION,
+            Style::default()
+                .fg(Color::LightGreen)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "]",
+            Style::default()
+                .fg(Color::LightBlue)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ])
+    .alignment(Alignment::Right);
     frame.render_widget(Paragraph::new(line), area);
 }
 
@@ -53,7 +67,11 @@ fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title("PROCESS")
-        .title_style(Style::default().fg(TITLE_COLOR).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(TITLE_COLOR)
+                .add_modifier(Modifier::BOLD),
+        )
         .padding(Padding::new(1, 1, 0, 0));
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -79,7 +97,10 @@ fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
 
     let line = Line::from(vec![
         Span::styled(name, Style::default().add_modifier(Modifier::BOLD)),
-        Span::styled(badge_text, Style::default().bg(status_color).fg(Color::Black)),
+        Span::styled(
+            badge_text,
+            Style::default().bg(status_color).fg(Color::Black),
+        ),
         Span::raw(" ".repeat(gap as usize + 1)),
         Span::styled(right, Style::default().fg(Color::DarkGray)),
     ]);
@@ -95,7 +116,12 @@ fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         .split(cols[0]);
 
     render_kv(frame, left[0], "Uptime", format_duration(app.run_time_secs));
-    render_kv(frame, left[1], "Executable", truncate_exe_path(&app.exe_path));
+    render_kv(
+        frame,
+        left[1],
+        "Executable",
+        truncate_exe_path(&app.exe_path),
+    );
 }
 
 /// Returns the display text and color for the process/monitoring status,
@@ -132,7 +158,11 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
     let time_labels = (format!("{window_secs:.0}s"), "0s".to_string());
 
     let cpu_ratio = app.cpu_current / 100.0;
-    let cpu_history: Vec<u64> = app.cpu_history.iter().map(|v| v.round().max(0.0) as u64).collect();
+    let cpu_history: Vec<u64> = app
+        .cpu_history
+        .iter()
+        .map(|v| v.round().max(0.0) as u64)
+        .collect();
 
     // The sparkline shares the same fixed 0-100% scale as the usage bar/
     // header, so the baseline is stable and the bar's height is a direct
@@ -246,7 +276,11 @@ fn draw_stat_panel(
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title_top(Line::from(title).left_aligned())
-        .title_style(Style::default().fg(TITLE_COLOR).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(TITLE_COLOR)
+                .add_modifier(Modifier::BOLD),
+        )
         .padding(Padding::uniform(1));
     if let Some(extra) = title_extra {
         block = block.title_top(
@@ -283,7 +317,13 @@ fn draw_stat_panel(
         frame.render_widget(Paragraph::new(line), sections[0]);
     }
 
-    draw_bar(frame, sections[1], usage_ratio, chart_color, Some(usage_label));
+    draw_bar(
+        frame,
+        sections[1],
+        usage_ratio,
+        chart_color,
+        Some(usage_label),
+    );
 
     let label_width = side_axis_labels
         .as_ref()
@@ -298,7 +338,11 @@ fn draw_stat_panel(
 
         let label_rows = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Min(0), Constraint::Length(1)])
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Min(0),
+                Constraint::Length(1),
+            ])
             .split(split[0]);
         frame.render_widget(Paragraph::new(max_label.clone()), label_rows[0]);
         frame.render_widget(Paragraph::new(min_label.clone()), label_rows[2]);
@@ -357,7 +401,11 @@ fn draw_disk_panel(frame: &mut Frame, area: Rect, app: &App) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title("DISK I/O")
-        .title_style(Style::default().fg(TITLE_COLOR).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(TITLE_COLOR)
+                .add_modifier(Modifier::BOLD),
+        )
         .padding(Padding::uniform(1));
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -438,14 +486,22 @@ fn draw_storage_panel(frame: &mut Frame, area: Rect, app: &App) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title("STORAGE")
-        .title_style(Style::default().fg(TITLE_COLOR).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(TITLE_COLOR)
+                .add_modifier(Modifier::BOLD),
+        )
         .padding(Padding::uniform(1));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Length(1), Constraint::Length(1)])
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
         .split(inner);
 
     let total_mb = app.storage_total_mb.max(1);
@@ -507,7 +563,9 @@ fn draw_bar(frame: &mut Frame, area: Rect, ratio: f32, color: Color, label: Opti
         spans.extend(bar_segment_spans(0, label_start, filled, color));
         spans.push(Span::styled(
             label,
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         ));
         spans.extend(bar_segment_spans(label_end, width, filled, color));
     } else {
@@ -528,10 +586,16 @@ fn bar_segment_spans(start: usize, end: usize, filled: usize, color: Color) -> V
     let split = filled.clamp(start, end);
     let mut spans = Vec::new();
     if split > start {
-        spans.push(Span::styled("█".repeat(split - start), Style::default().fg(color)));
+        spans.push(Span::styled(
+            "█".repeat(split - start),
+            Style::default().fg(color),
+        ));
     }
     if end > split {
-        spans.push(Span::styled("░".repeat(end - split), Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(
+            "░".repeat(end - split),
+            Style::default().fg(Color::DarkGray),
+        ));
     }
     spans
 }
@@ -576,10 +640,7 @@ fn draw_footer(frame: &mut Frame, area: Rect, _app: &App) {
 /// filename (e.g. "...\Ascension\bin\worldserver.exe"), since full install
 /// paths are often too long to be useful in a fixed-width panel.
 fn truncate_exe_path(path: &str) -> String {
-    let parts: Vec<&str> = path
-        .split(['\\', '/'])
-        .filter(|s| !s.is_empty())
-        .collect();
+    let parts: Vec<&str> = path.split(['\\', '/']).filter(|s| !s.is_empty()).collect();
 
     if parts.len() <= 3 {
         return path.to_string();

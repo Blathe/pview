@@ -14,9 +14,11 @@ use std::time::{Duration, Instant};
 use clap::Parser;
 use crossterm::event::{self, Event, KeyEventKind};
 use crossterm::execute;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
-use ratatui::backend::CrosstermBackend;
+use crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
 use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
 use sysinfo::{Pid, ProcessesToUpdate, System};
 
 use app::App;
@@ -75,7 +77,12 @@ fn main() -> ExitCode {
                     Ok(guard) => guard,
                     Err(code) => return code,
                 };
-                match picker::run_picker(&mut guard.terminal, &mut sys, tick_interval, target.clone()) {
+                match picker::run_picker(
+                    &mut guard.terminal,
+                    &mut sys,
+                    tick_interval,
+                    target.clone(),
+                ) {
                     Ok(Some(pid)) => (guard, pid),
                     Ok(None) => {
                         drop(guard);
@@ -114,7 +121,12 @@ fn init_terminal_guard() -> Result<TerminalGuard, ExitCode> {
     }
 }
 
-fn run_dashboard(mut guard: TerminalGuard, sys: System, pid: Pid, tick_interval: Duration) -> ExitCode {
+fn run_dashboard(
+    mut guard: TerminalGuard,
+    sys: System,
+    pid: Pid,
+    tick_interval: Duration,
+) -> ExitCode {
     let process_name;
     let exe_path;
     let exe_path_buf;
@@ -181,16 +193,13 @@ fn run(
     let mut last_tick = Instant::now();
 
     loop {
-        let timeout = app
-            .tick_interval
-            .saturating_sub(last_tick.elapsed());
+        let timeout = app.tick_interval.saturating_sub(last_tick.elapsed());
 
-        if event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    app.handle_key(key.code);
-                }
-            }
+        if event::poll(timeout)?
+            && let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press
+        {
+            app.handle_key(key.code);
         }
 
         if last_tick.elapsed() >= app.tick_interval {

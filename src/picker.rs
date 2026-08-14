@@ -2,8 +2,8 @@ use std::io::{self, Stdout};
 use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -15,7 +15,7 @@ use ratatui::{Frame, Terminal};
 use sysinfo::{Pid, ProcessesToUpdate, System};
 
 use crate::config::BYTES_PER_MB;
-use crate::ui::TITLE_COLOR;
+use crate::ui::{TITLE_COLOR, draw_slim_header};
 
 const SELECTED_BG: Color = Color::Rgb(30, 41, 59);
 const ACCENT_COLOR: Color = TITLE_COLOR;
@@ -163,15 +163,14 @@ pub fn run_picker(
     loop {
         terminal.draw(|frame| draw(frame, &state))?;
 
-        if event::poll(tick_rate)? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    match handle_key(&mut state, key.code) {
-                        PickerAction::Continue => {}
-                        PickerAction::Select(pid) => return Ok(Some(pid)),
-                        PickerAction::Cancel => return Ok(None),
-                    }
-                }
+        if event::poll(tick_rate)?
+            && let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press
+        {
+            match handle_key(&mut state, key.code) {
+                PickerAction::Continue => {}
+                PickerAction::Select(pid) => return Ok(Some(pid)),
+                PickerAction::Cancel => return Ok(None),
             }
         }
 
@@ -224,36 +223,41 @@ fn draw(frame: &mut Frame, state: &PickerState) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(1),
             Constraint::Length(3),
             Constraint::Min(0),
             Constraint::Length(3),
         ])
         .split(area);
 
-    draw_search_box(frame, rows[0], state);
-    draw_results(frame, rows[1], state);
-    draw_footer(frame, rows[2]);
+    draw_slim_header(frame, rows[0]);
+    draw_search_box(frame, rows[1], state);
+    draw_results(frame, rows[2], state);
+    draw_footer(frame, rows[3]);
 }
 
 fn draw_search_box(frame: &mut Frame, area: Rect, state: &PickerState) {
-
-    let summary: String = if state.query != "" {
-        format!("{} matches  ·  {} processes total",
-        state.filtered.len(),
-        state.all.len())
+    let summary: String = if !state.query.is_empty() {
+        format!(
+            "{} matches  ·  {} processes total",
+            state.filtered.len(),
+            state.all.len()
+        )
     } else {
-        format!("{} processes total",
-        state.all.len())
+        format!("{} processes total", state.all.len())
     };
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title_top(Line::from("SEARCH").left_aligned())
-        .title_style(Style::default().fg(TITLE_COLOR).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(TITLE_COLOR)
+                .add_modifier(Modifier::BOLD),
+        )
         .title_top(
-            Line::from(Span::styled(summary, Style::default().fg(Color::DarkGray)))
-                .right_aligned(),
+            Line::from(Span::styled(summary, Style::default().fg(Color::DarkGray))).right_aligned(),
         );
 
     let line = if state.query.is_empty() {
@@ -263,7 +267,10 @@ fn draw_search_box(frame: &mut Frame, area: Rect, state: &PickerState) {
         ))
     } else {
         Line::from(vec![
-            Span::styled(state.query.clone(), Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                state.query.clone(),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
             Span::styled("▏", Style::default().fg(TITLE_COLOR)),
         ])
     };
@@ -275,7 +282,11 @@ fn draw_results(frame: &mut Frame, area: Rect, state: &PickerState) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title_top(Line::from("PROCESSES").left_aligned())
-        .title_style(Style::default().fg(TITLE_COLOR).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(TITLE_COLOR)
+                .add_modifier(Modifier::BOLD),
+        )
         .title_top(
             Line::from(Span::styled(
                 "sorted by name  ▲",
@@ -352,16 +363,22 @@ fn draw_column_headers(frame: &mut Frame, area: Rect) {
     let style = Style::default().fg(Color::DarkGray);
 
     frame.render_widget(
-        Paragraph::new("PID").style(style).alignment(Alignment::Right),
+        Paragraph::new("PID")
+            .style(style)
+            .alignment(Alignment::Right),
         cols[1],
     );
     frame.render_widget(Paragraph::new("PROCESS").style(style), cols[3]);
     frame.render_widget(
-        Paragraph::new("CPU%").style(style).alignment(Alignment::Right),
+        Paragraph::new("CPU%")
+            .style(style)
+            .alignment(Alignment::Right),
         cols[5],
     );
     frame.render_widget(
-        Paragraph::new("MEM").style(style).alignment(Alignment::Right),
+        Paragraph::new("MEM")
+            .style(style)
+            .alignment(Alignment::Right),
         cols[7],
     );
 }
@@ -388,12 +405,20 @@ fn draw_process_rows(frame: &mut Frame, area: Rect, state: &PickerState) -> usiz
 
     let row_rects = Layout::default()
         .direction(Direction::Vertical)
-        .constraints(vec![Constraint::Length(1); visible + usize::from(more_below > 0)])
+        .constraints(vec![
+            Constraint::Length(1);
+            visible + usize::from(more_below > 0)
+        ])
         .split(area);
 
     for (row_idx, &filtered_idx) in state.filtered[offset..offset + visible].iter().enumerate() {
         let entry = &state.all[filtered_idx];
-        draw_process_row(frame, row_rects[row_idx], entry, offset + row_idx == state.selected);
+        draw_process_row(
+            frame,
+            row_rects[row_idx],
+            entry,
+            offset + row_idx == state.selected,
+        );
     }
 
     if more_below > 0 {
@@ -402,7 +427,10 @@ fn draw_process_rows(frame: &mut Frame, area: Rect, state: &PickerState) -> usiz
             if more_below == 1 { "" } else { "es" }
         );
         frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(Color::DarkGray)))),
+            Paragraph::new(Line::from(Span::styled(
+                hint,
+                Style::default().fg(Color::DarkGray),
+            ))),
             row_rects[visible],
         );
     }
@@ -412,7 +440,10 @@ fn draw_process_rows(frame: &mut Frame, area: Rect, state: &PickerState) -> usiz
 
 fn draw_process_row(frame: &mut Frame, area: Rect, entry: &PickerEntry, selected: bool) {
     if selected {
-        frame.render_widget(Block::default().style(Style::default().bg(SELECTED_BG)), area);
+        frame.render_widget(
+            Block::default().style(Style::default().bg(SELECTED_BG)),
+            area,
+        );
     }
 
     let cols = columns(area);
@@ -462,26 +493,38 @@ fn name_line(entry: &PickerEntry, selected: bool) -> Line<'static> {
     let mut spans = if selected {
         vec![Span::styled(
             entry.name.clone(),
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         )]
     } else {
         match entry.name.rfind('.') {
             Some(dot) => vec![
                 Span::styled(
                     entry.name[..dot].to_string(),
-                    Style::default().fg(TITLE_COLOR).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(TITLE_COLOR)
+                        .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(entry.name[dot..].to_string(), Style::default().fg(Color::White)),
+                Span::styled(
+                    entry.name[dot..].to_string(),
+                    Style::default().fg(Color::White),
+                ),
             ],
             None => vec![Span::styled(
                 entry.name.clone(),
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
             )],
         }
     };
 
     if entry.is_group_root {
-        spans.push(Span::styled(" (parent)", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(
+            " (parent)",
+            Style::default().fg(Color::DarkGray),
+        ));
     }
 
     Line::from(spans)

@@ -16,3 +16,5 @@ pub const MEM_TREND_MAX_SAMPLES: usize = 60;
 /// tools (Task Manager, Explorer, Resource Monitor), which all compute this
 /// way despite labeling it "MB"/"GB".
 pub const BYTES_PER_MB: u64 = 1_048_576;
+
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
