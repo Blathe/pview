@@ -10,10 +10,11 @@ Built with [ratatui](https://github.com/ratatui-org/ratatui), [crossterm](https:
 
 ## Features
 
-- **Live CPU and memory graphs** — braille line charts with a side axis and a rolling time window (e.g. last 60s), scaled against 100% CPU and total system memory so the numbers are directly comparable.
-- **Disk I/O** — current read/write rate plus cumulative totals for the monitoring session.
-- **Process info** — uptime, executable path, start time, and all-time CPU/memory peaks.
-- **Interactive process picker** — run `pview` with no arguments to fuzzy-search running processes and pick one interactively, no need to know the exact name or PID up front.
+- **Live CPU and memory graphs** — sparkline charts on a fixed 0–100% baseline (CPU: % of one core; memory: % of total system RAM) with a rolling time window (e.g. last 60s), plus a peak-since-start reading and an at-a-glance health badge (OK / HIGH / CRIT).
+- **Disk I/O** — current read/write rate as a gauge against the session peak, plus cumulative totals for the monitoring session.
+- **Storage** — used vs. total capacity of the disk backing the process's executable, with a gauge and free-space total.
+- **Process info** — status, PID, start time, uptime, and executable path.
+- **Interactive process picker** — run `pview` with no arguments to fuzzy-search running processes and pick one interactively, no need to know the exact name or PID up front. Shows live CPU%/MEM per process, sorted alphabetically by name so rows don't jump around as usage changes.
 - **Pause and reset** — freeze the display to inspect a moment, or clear the graphs and start a fresh window without restarting.
 - **Configurable refresh rate** — default 1s, tune it down for a more responsive view.
 
