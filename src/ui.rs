@@ -1,46 +1,113 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::symbols::Marker;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, Paragraph};
+use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph, Sparkline};
 use ratatui::Frame;
 
 use crate::app::App;
 use crate::config::{BYTES_PER_MB, HISTORY_LEN};
+
+const CPU_COLOR: Color = Color::Rgb(59, 130, 246); // blue
+const MEM_COLOR: Color = Color::Rgb(249, 115, 22); // orange
+const TITLE_COLOR: Color = Color::LightBlue;
 
 pub fn draw(frame: &mut Frame, app: &App) {
     let area = frame.area();
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
-            Constraint::Percentage(45),
-            Constraint::Length(4),
-            Constraint::Length(5),
-            Constraint::Fill(1),
             Constraint::Length(1),
+            Constraint::Length(5),
+            Constraint::Length(11),
+            Constraint::Length(11),
+            Constraint::Fill(1),
+            Constraint::Length(3),
         ])
         .split(area);
 
-    draw_top_bar(frame, rows[0], app);
-    draw_cpu_mem_row(frame, rows[1], app);
-    draw_disk_panel(frame, rows[2], app);
-    draw_process_panel(frame, rows[3], app);
+    draw_slim_header(frame, rows[0], app);
+    draw_status_bar(frame, rows[1], app);
+    draw_cpu_mem_row(frame, rows[2], app);
+    draw_disk_panel(frame, rows[3], app);
     draw_footer(frame, rows[5], app);
 }
 
-fn draw_top_bar(frame: &mut Frame, area: Rect, app: &App) {
-    let (status_text, status_color) = status_display(app);
+fn draw_slim_header(frame: &mut Frame, area: Rect, app: &App) {
+    let (_, status_color) = status_display(app);
     let line = Line::from(vec![
-        Span::raw(format!("{}  ", app.process_name)),
-        Span::raw(format!("PID {}  ", app.pid)),
-        Span::styled(status_text, Style::default().fg(status_color)),
+        Span::styled("● ", Style::default().fg(status_color)),
+        Span::styled("PVIEW", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw("  ·  "),
+        Span::raw(app.process_name.clone()),
     ]);
+    frame.render_widget(Paragraph::new(line), area);
+}
+
+fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .title("PVIEW")
-        .title_style(Style::default().add_modifier(Modifier::BOLD));
-    frame.render_widget(Paragraph::new(line).block(block), area);
+        .border_type(BorderType::Rounded)
+        .title("PROCESS")
+        .title_style(Style::default().fg(TITLE_COLOR).add_modifier(Modifier::BOLD))
+        .padding(Padding::new(1, 1, 0, 0));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(inner);
+
+    let (status_text, status_color) = status_display(app);
+    let name = format!("{}  ", app.process_name);
+    let badge_text = format!(" {status_text} ");
+    let right = format!(
+        "PID {}    started {}",
+        app.pid,
+        format_unix_secs(app.started_at_unix_secs)
+    );
+
+    let left_len = name.len() as u16 + badge_text.len() as u16;
+    let gap = sections[0]
+        .width
+        .saturating_sub(left_len + right.len() as u16 + 1);
+
+    let line = Line::from(vec![
+        Span::styled(name, Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled(badge_text, Style::default().bg(status_color).fg(Color::Black)),
+        Span::raw(" ".repeat(gap as usize + 1)),
+        Span::styled(right, Style::default().fg(Color::DarkGray)),
+    ]);
+    frame.render_widget(Paragraph::new(line), sections[0]);
+
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(sections[1]);
+    let left = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1); 2])
+        .split(cols[0]);
+    let right = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1); 2])
+        .split(cols[1]);
+
+    render_kv(frame, left[0], "Uptime", format_duration(app.run_time_secs));
+    render_kv(frame, left[1], "Executable", truncate_exe_path(&app.exe_path));
+
+    render_kv(
+        frame,
+        right[0],
+        "Memory Peak (all time)",
+        format!("{} MB", app.mem_peak_mb),
+    );
+    render_kv(
+        frame,
+        right[1],
+        "CPU Peak (all time)",
+        format!("{:.1}%", app.cpu_peak),
+    );
 }
 
 /// Returns the display text and color for the process/monitoring status,
@@ -55,6 +122,18 @@ fn status_display(app: &App) -> (String, Color) {
     }
 }
 
+/// Thresholds a percentage into a health label + color, used for the peak
+/// badges on the CPU/Memory panels.
+fn health_badge(pct: f64) -> (&'static str, Color) {
+    if pct >= 90.0 {
+        ("CRIT", Color::Red)
+    } else if pct >= 70.0 {
+        ("HIGH", Color::Yellow)
+    } else {
+        ("OK", Color::Green)
+    }
+}
+
 fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
     let cols = Layout::default()
         .direction(Direction::Horizontal)
@@ -64,18 +143,26 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
     let window_secs = HISTORY_LEN as f64 * app.tick_interval.as_secs_f64();
     let time_labels = (format!("{window_secs:.0}s"), "0s".to_string());
 
+    let cpu_ratio = app.cpu_current / 100.0;
     draw_stat_panel(
         frame,
         cols[0],
         "CPU",
         Some(format!("{:.1}%", app.cpu_current)),
-        app.cpu_history.iter().map(|v| *v as f64).collect(),
+        app.cpu_history.iter().map(|v| v.round().max(0.0) as u64).collect(),
         100.0,
         Some(("0%".to_string(), "100%".to_string())),
         time_labels.clone(),
+        format!("peak {:.1}%", app.cpu_peak),
+        health_badge(app.cpu_current as f64),
+        cpu_ratio,
+        format!("{:.1}%", app.cpu_current),
+        CPU_COLOR,
     );
 
     let mem_total_mb = app.mem_total_mb.max(1) as f64;
+    let mem_peak_pct = app.mem_peak_mb as f64 / mem_total_mb * 100.0;
+    let mem_ratio = (app.mem_current_mb as f64 / mem_total_mb) as f32;
     draw_stat_panel(
         frame,
         cols[1],
@@ -85,10 +172,15 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
             app.mem_current_mb,
             format_mem_total(app.mem_total_mb)
         )),
-        app.mem_history.iter().map(|v| *v as f64).collect(),
+        app.mem_history.iter().copied().collect(),
         mem_total_mb,
         Some(("0%".to_string(), "100%".to_string())),
         time_labels,
+        format!("peak {mem_peak_pct:.1}%"),
+        health_badge(mem_ratio as f64 * 100.0),
+        mem_ratio,
+        format!("{:.1}%", mem_ratio * 100.0),
+        MEM_COLOR,
     );
 }
 
@@ -108,12 +200,22 @@ fn draw_stat_panel(
     area: Rect,
     title: &str,
     value: Option<String>,
-    history: Vec<f64>,
+    history: Vec<u64>,
     y_max: f64,
     side_axis_labels: Option<(String, String)>,
     time_labels: (String, String),
+    peak_label: String,
+    badge: (&'static str, Color),
+    usage_ratio: f32,
+    usage_label: String,
+    chart_color: Color,
 ) {
-    let block = Block::default().borders(Borders::ALL).title(title);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(title)
+        .title_style(Style::default().fg(TITLE_COLOR).add_modifier(Modifier::BOLD))
+        .padding(Padding::uniform(1));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -121,20 +223,29 @@ fn draw_stat_panel(
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(if value.is_some() { 1 } else { 0 }),
+            Constraint::Length(1),
             Constraint::Min(1),
             Constraint::Length(1),
         ])
         .split(inner);
 
     if let Some(value) = value {
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                value,
-                Style::default().add_modifier(Modifier::BOLD),
-            ))),
-            sections[0],
-        );
+        let badge_text = format!(" {} ", badge.0);
+        let right = format!("{peak_label}  ");
+        let left_len = value.len() as u16;
+        let right_len = right.len() as u16 + badge_text.len() as u16;
+        let gap = sections[0].width.saturating_sub(left_len + right_len);
+
+        let line = Line::from(vec![
+            Span::styled(value, Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" ".repeat(gap as usize)),
+            Span::styled(right, Style::default().fg(Color::DarkGray)),
+            Span::styled(badge_text, Style::default().bg(badge.1).fg(Color::Black)),
+        ]);
+        frame.render_widget(Paragraph::new(line), sections[0]);
     }
+
+    draw_bar(frame, sections[1], usage_ratio, chart_color, Some(usage_label));
 
     let label_width = side_axis_labels
         .as_ref()
@@ -145,7 +256,7 @@ fn draw_stat_panel(
         let split = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(label_width), Constraint::Min(1)])
-            .split(sections[1]);
+            .split(sections[2]);
 
         let label_rows = Layout::default()
             .direction(Direction::Vertical)
@@ -156,32 +267,20 @@ fn draw_stat_panel(
 
         split[1]
     } else {
-        sections[1]
+        sections[2]
     };
 
-    let points: Vec<(f64, f64)> = history
-        .iter()
-        .enumerate()
-        .map(|(i, v)| (i as f64, *v))
-        .collect();
-
-    let dataset = Dataset::default()
-        .marker(Marker::Braille)
-        .graph_type(GraphType::Line)
-        .style(Style::default().fg(Color::Cyan))
-        .data(&points);
-
-    let chart = Chart::new(vec![dataset])
-        .x_axis(Axis::default().bounds([0.0, (HISTORY_LEN.saturating_sub(1)) as f64]))
-        .y_axis(Axis::default().bounds([0.0, y_max.max(1.0)]))
-        .block(Block::default().borders(Borders::LEFT | Borders::BOTTOM));
-    frame.render_widget(chart, plot_area);
+    let sparkline = Sparkline::default()
+        .data(&history)
+        .max(y_max.round() as u64)
+        .style(Style::default().fg(chart_color));
+    frame.render_widget(sparkline, plot_area);
 
     let (left_time, right_time) = time_labels;
     let time_row = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(label_width), Constraint::Min(1)])
-        .split(sections[2]);
+        .split(sections[3]);
     let gap = time_row[1]
         .width
         .saturating_sub((left_time.len() + right_time.len()) as u16);
@@ -194,80 +293,134 @@ fn draw_stat_panel(
 }
 
 fn draw_disk_panel(frame: &mut Frame, area: Rect, app: &App) {
-    let block = Block::default().borders(Borders::ALL).title("DISK I/O");
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title("DISK I/O")
+        .title_style(Style::default().fg(TITLE_COLOR).add_modifier(Modifier::BOLD))
+        .padding(Padding::uniform(1));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Length(1)])
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
         .split(inner);
-    let top = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(rows[0]);
-    let bottom = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(rows[1]);
 
-    render_kv(frame, top[0], "Read", format!("{:.2} MB/s", app.disk_read_rate_mb_s));
-    render_kv(
+    draw_disk_row(
         frame,
-        top[1],
-        "Total Read",
-        format!(
-            "{:.2} MB",
-            app.disk_read_bytes_session as f64 / BYTES_PER_MB as f64
-        ),
+        [rows[0], rows[1], rows[2]],
+        "Read",
+        app.disk_read_rate_mb_s,
+        app.disk_read_rate_peak_mb_s,
+        app.disk_read_bytes_session as f64 / BYTES_PER_MB as f64,
+        CPU_COLOR,
     );
-    render_kv(frame, bottom[0], "Write", format!("{:.2} MB/s", app.disk_write_rate_mb_s));
-    render_kv(
+
+    draw_disk_row(
         frame,
-        bottom[1],
-        "Total Write",
-        format!(
-            "{:.2} MB",
-            app.disk_write_bytes_session as f64 / BYTES_PER_MB as f64
-        ),
+        [rows[4], rows[5], rows[6]],
+        "Write",
+        app.disk_write_rate_mb_s,
+        app.disk_write_rate_peak_mb_s,
+        app.disk_write_bytes_session as f64 / BYTES_PER_MB as f64,
+        MEM_COLOR,
     );
 }
 
-fn draw_process_panel(frame: &mut Frame, area: Rect, app: &App) {
-    let block = Block::default().borders(Borders::ALL).title("PROCESS");
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+fn draw_disk_row(
+    frame: &mut Frame,
+    rows: [Rect; 3],
+    label: &str,
+    rate: f32,
+    peak_rate: f32,
+    total_mb: f64,
+    color: Color,
+) {
+    let rate_text = format!("{rate:.2} MB/s");
+    let gap = rows[0]
+        .width
+        .saturating_sub(label.len() as u16 + rate_text.len() as u16);
+    let line = Line::from(vec![
+        Span::raw(label.to_string()),
+        Span::raw(" ".repeat(gap as usize)),
+        Span::raw(rate_text),
+    ]);
+    frame.render_widget(Paragraph::new(line), rows[0]);
 
-    let cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(inner);
+    let ratio = if peak_rate > 0.0 {
+        (rate / peak_rate).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    draw_bar(frame, rows[1], ratio, color, None);
 
-    let left = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1); 2])
-        .split(cols[0]);
-    let right = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1); 3])
-        .split(cols[1]);
-
-    render_kv(frame, left[0], "Uptime", format_duration(app.run_time_secs));
-    render_kv(frame, left[1], "Executable", app.exe_path.clone());
-
-    render_kv(frame, right[0], "Started", format_unix_secs(app.started_at_unix_secs));
-    render_kv(
-        frame,
-        right[1],
-        "Memory Peak (all time)",
-        format!("{} MB", app.mem_peak_mb),
+    let summary = format!("Max {peak_rate:.2} MB/s    Total {total_mb:.2} MB");
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            summary,
+            Style::default().fg(Color::DarkGray),
+        ))),
+        rows[2],
     );
-    render_kv(
-        frame,
-        right[2],
-        "CPU Peak (all time)",
-        format!("{:.1}%", app.cpu_peak),
-    );
+}
+
+/// Renders a filled horizontal bar: `ratio` (0.0-1.0) worth of solid blocks
+/// in `color`, followed by dim track characters for the remainder, so the
+/// bar is visibly present (not blank) even at 0%. An optional `label` is
+/// centered on top, overwriting whichever bar/track characters sit beneath
+/// it, styled independently of the fill so it stays readable either way.
+fn draw_bar(frame: &mut Frame, area: Rect, ratio: f32, color: Color, label: Option<String>) {
+    let width = area.width as usize;
+    let filled = ((width as f32) * ratio.clamp(0.0, 1.0)).round() as usize;
+    let filled = filled.min(width);
+
+    let mut spans = Vec::new();
+
+    if let Some(label) = label {
+        let label = format!(" {label} ");
+        let label_len = label.chars().count().min(width);
+        let label_start = (width.saturating_sub(label_len)) / 2;
+        let label_end = label_start + label_len;
+
+        spans.extend(bar_segment_spans(0, label_start, filled, color));
+        spans.push(Span::styled(
+            label,
+            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        ));
+        spans.extend(bar_segment_spans(label_end, width, filled, color));
+    } else {
+        spans.extend(bar_segment_spans(0, width, filled, color));
+    }
+
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+/// Splits a `[start, end)` slice of a bar into filled/track spans around the
+/// `filled` boundary, so a label overlay can sit on either side without
+/// losing the fill/track distinction underneath it.
+fn bar_segment_spans(start: usize, end: usize, filled: usize, color: Color) -> Vec<Span<'static>> {
+    if start >= end {
+        return Vec::new();
+    }
+
+    let split = filled.clamp(start, end);
+    let mut spans = Vec::new();
+    if split > start {
+        spans.push(Span::styled("█".repeat(split - start), Style::default().fg(color)));
+    }
+    if end > split {
+        spans.push(Span::styled("░".repeat(end - split), Style::default().fg(Color::DarkGray)));
+    }
+    spans
 }
 
 fn render_kv(frame: &mut Frame, area: Rect, key: &str, value: String) {
@@ -283,8 +436,43 @@ fn render_kv_styled(frame: &mut Frame, area: Rect, key: &str, value: String, val
 }
 
 fn draw_footer(frame: &mut Frame, area: Rect, _app: &App) {
-    let line = Line::from(Span::raw("  q Quit    p Pause    r Reset graphs"));
-    frame.render_widget(Paragraph::new(line), area);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let key_style = Style::default()
+        .bg(TITLE_COLOR)
+        .fg(Color::Black)
+        .add_modifier(Modifier::BOLD);
+
+    let line = Line::from(vec![
+        Span::raw(" "),
+        Span::styled(" q ", key_style),
+        Span::raw(" Quit    "),
+        Span::styled(" p ", key_style),
+        Span::raw(" Pause    "),
+        Span::styled(" r ", key_style),
+        Span::raw(" Reset graphs"),
+    ]);
+    frame.render_widget(Paragraph::new(line), inner);
+}
+
+/// Shortens an executable path to at most its last 2 directories plus the
+/// filename (e.g. "...\Ascension\bin\worldserver.exe"), since full install
+/// paths are often too long to be useful in a fixed-width panel.
+fn truncate_exe_path(path: &str) -> String {
+    let parts: Vec<&str> = path
+        .split(['\\', '/'])
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if parts.len() <= 3 {
+        return path.to_string();
+    }
+
+    format!("...\\{}", parts[parts.len() - 3..].join("\\"))
 }
 
 fn format_duration(total_secs: u64) -> String {
