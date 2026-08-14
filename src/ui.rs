@@ -9,6 +9,7 @@ use crate::config::{BYTES_PER_MB, HISTORY_LEN};
 
 const CPU_COLOR: Color = Color::Rgb(59, 130, 246); // blue
 const MEM_COLOR: Color = Color::Rgb(249, 115, 22); // orange
+const STORAGE_COLOR: Color = Color::Rgb(168, 85, 247); // purple
 const TITLE_COLOR: Color = Color::LightBlue;
 
 pub fn draw(frame: &mut Frame, app: &App) {
@@ -20,6 +21,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
             Constraint::Length(5),
             Constraint::Length(11),
             Constraint::Length(11),
+            Constraint::Length(7),
             Constraint::Fill(1),
             Constraint::Length(3),
         ])
@@ -29,7 +31,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
     draw_status_bar(frame, rows[1], app);
     draw_cpu_mem_row(frame, rows[2], app);
     draw_disk_panel(frame, rows[3], app);
-    draw_footer(frame, rows[5], app);
+    draw_storage_panel(frame, rows[4], app);
+    draw_footer(frame, rows[6], app);
 }
 
 fn draw_slim_header(frame: &mut Frame, area: Rect, app: &App) {
@@ -198,7 +201,7 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
         Some(format!(
             "{} MB / {}",
             app.mem_current_mb,
-            format_mem_total(app.mem_total_mb)
+            format_mb_as_gb(app.mem_total_mb)
         )),
         app.mem_history.iter().copied().collect(),
         mem_sparkline_max as f64,
@@ -212,9 +215,9 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
     );
 }
 
-/// Formats total system memory in GB, rounding to a whole number when close
-/// to one (e.g. 32 GB) and otherwise showing one decimal place.
-fn format_mem_total(total_mb: u64) -> String {
+/// Formats a size in MB as GB, rounding to a whole number when close to one
+/// (e.g. 32 GB) and otherwise showing one decimal place.
+fn format_mb_as_gb(total_mb: u64) -> String {
     let total_gb = total_mb as f64 / 1024.0;
     if (total_gb - total_gb.round()).abs() < 0.05 {
         format!("{:.0} GB", total_gb.round())
@@ -408,6 +411,59 @@ fn draw_disk_row(
     draw_bar(frame, rows[1], ratio, color, None);
 
     let summary = format!("Max {peak_rate:.2} MB/s    Total {total_mb:.2} MB");
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            summary,
+            Style::default().fg(Color::DarkGray),
+        ))),
+        rows[2],
+    );
+}
+
+fn draw_storage_panel(frame: &mut Frame, area: Rect, app: &App) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title("STORAGE")
+        .title_style(Style::default().fg(TITLE_COLOR).add_modifier(Modifier::BOLD))
+        .padding(Padding::uniform(1));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Length(1), Constraint::Length(1)])
+        .split(inner);
+
+    let total_mb = app.storage_total_mb.max(1);
+    let ratio = (app.storage_used_mb as f32 / total_mb as f32).clamp(0.0, 1.0);
+    let free_mb = total_mb.saturating_sub(app.storage_used_mb);
+
+    let left = app.storage_mount_point.clone();
+    let right = format!(
+        "{} / {}",
+        format_mb_as_gb(app.storage_used_mb),
+        format_mb_as_gb(app.storage_total_mb)
+    );
+    let gap = rows[0]
+        .width
+        .saturating_sub(left.len() as u16 + right.len() as u16);
+    let line = Line::from(vec![
+        Span::styled(left, Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(" ".repeat(gap as usize)),
+        Span::raw(right),
+    ]);
+    frame.render_widget(Paragraph::new(line), rows[0]);
+
+    draw_bar(
+        frame,
+        rows[1],
+        ratio,
+        STORAGE_COLOR,
+        Some(format!("{:.1}%", ratio * 100.0)),
+    );
+
+    let summary = format!("Free {}", format_mb_as_gb(free_mb));
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             summary,
