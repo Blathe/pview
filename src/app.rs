@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use crossterm::event::KeyCode;
 use sysinfo::{Pid, ProcessStatus};
 
-use crate::config::{BYTES_PER_MB, HISTORY_LEN};
+use crate::config::{BYTES_PER_MB, HISTORY_LEN, MEM_TREND_MAX_SAMPLES, MEM_TREND_SAMPLE_INTERVAL_SECS};
 use crate::monitor::Sample;
 
 pub struct App {
@@ -20,6 +20,12 @@ pub struct App {
 
     pub cpu_history: VecDeque<f32>,
     pub mem_history: VecDeque<u64>, // MB
+
+    // Long-lived, coarsely-sampled memory history (independent of
+    // `mem_history`'s short display window) used to compute the
+    // "memory over 1h" trend badge.
+    mem_trend_samples: VecDeque<(Instant, u64)>,
+    last_mem_trend_sample_at: Instant,
 
     pub cpu_current: f32,
     pub cpu_peak: f32,
@@ -57,6 +63,7 @@ impl App {
         tick_interval: Duration,
         initial: Sample,
     ) -> Self {
+        let now = Instant::now();
         Self {
             pid,
             process_name,
@@ -70,6 +77,9 @@ impl App {
 
             cpu_history: VecDeque::with_capacity(HISTORY_LEN),
             mem_history: VecDeque::with_capacity(HISTORY_LEN),
+
+            mem_trend_samples: VecDeque::from([(now, initial.memory_bytes / BYTES_PER_MB)]),
+            last_mem_trend_sample_at: now,
 
             cpu_current: initial.cpu_usage,
             cpu_peak: initial.cpu_usage,
@@ -93,7 +103,7 @@ impl App {
             baseline_write_bytes: initial.disk_total_written_bytes,
             last_read_bytes: initial.disk_total_read_bytes,
             last_write_bytes: initial.disk_total_written_bytes,
-            last_sample_at: Instant::now(),
+            last_sample_at: now,
 
             paused: false,
             should_quit: false,
@@ -153,6 +163,33 @@ impl App {
             self.mem_history.pop_front();
         }
         self.mem_history.push_back(self.mem_current_mb);
+
+        if now.duration_since(self.last_mem_trend_sample_at)
+            >= Duration::from_secs(MEM_TREND_SAMPLE_INTERVAL_SECS)
+        {
+            if self.mem_trend_samples.len() == MEM_TREND_MAX_SAMPLES {
+                self.mem_trend_samples.pop_front();
+            }
+            self.mem_trend_samples.push_back((now, self.mem_current_mb));
+            self.last_mem_trend_sample_at = now;
+        }
+    }
+
+    /// Memory trend rate in MB/hr computed from the oldest and newest
+    /// entries in `mem_trend_samples`, plus the elapsed span that rate was
+    /// computed over. `None` until at least one sampling interval
+    /// (`MEM_TREND_SAMPLE_INTERVAL_SECS`) has elapsed, since a single
+    /// sample can't yet describe a trend.
+    pub fn mem_trend_mb_per_hr(&self) -> Option<(f32, Duration)> {
+        let oldest = self.mem_trend_samples.front()?;
+        let newest = self.mem_trend_samples.back()?;
+        let elapsed = newest.0.duration_since(oldest.0);
+        if elapsed.as_secs() < MEM_TREND_SAMPLE_INTERVAL_SECS {
+            return None;
+        }
+        let delta_mb = newest.1 as f32 - oldest.1 as f32;
+        let rate = delta_mb / elapsed.as_secs_f32() * 3600.0;
+        Some((rate, elapsed))
     }
 
     pub fn handle_key(&mut self, key: KeyCode) {
