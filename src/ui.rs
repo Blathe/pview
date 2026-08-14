@@ -144,14 +144,28 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
     let time_labels = (format!("{window_secs:.0}s"), "0s".to_string());
 
     let cpu_ratio = app.cpu_current / 100.0;
+    let cpu_history: Vec<u64> = app.cpu_history.iter().map(|v| v.round().max(0.0) as u64).collect();
+
+    // As with memory, the usage bar/header stay on the fixed 0-100% scale,
+    // but the sparkline auto-scales to the window's own peak so a steady
+    // low usage percentage still renders a visible bar instead of rounding
+    // down to nothing against a fixed 100% ceiling.
+    let cpu_sparkline_max = cpu_history
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(app.cpu_current.round().max(0.0) as u64)
+        .max(app.cpu_current.round().max(0.0) as u64)
+        .max(1);
+
     draw_stat_panel(
         frame,
         cols[0],
         "CPU",
         Some(format!("{:.1}%", app.cpu_current)),
-        app.cpu_history.iter().map(|v| v.round().max(0.0) as u64).collect(),
-        100.0,
-        Some(("0%".to_string(), "100%".to_string())),
+        cpu_history,
+        cpu_sparkline_max as f64,
+        Some(("0%".to_string(), format!("{cpu_sparkline_max}%"))),
         time_labels.clone(),
         format!("peak {:.1}%", app.cpu_peak),
         health_badge(app.cpu_current as f64),
@@ -163,6 +177,20 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
     let mem_total_mb = app.mem_total_mb.max(1) as f64;
     let mem_peak_pct = app.mem_peak_mb as f64 / mem_total_mb * 100.0;
     let mem_ratio = (app.mem_current_mb as f64 / mem_total_mb) as f32;
+
+    // The usage bar/header stay scaled against total system RAM, but the
+    // sparkline auto-scales to the window's own peak so a process using a
+    // small, steady slice of total memory still shows a visible trend
+    // instead of flatlining near zero.
+    let mem_sparkline_max = app
+        .mem_history
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(app.mem_current_mb)
+        .max(app.mem_current_mb)
+        .max(1);
+
     draw_stat_panel(
         frame,
         cols[1],
@@ -173,8 +201,8 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
             format_mem_total(app.mem_total_mb)
         )),
         app.mem_history.iter().copied().collect(),
-        mem_total_mb,
-        Some(("0%".to_string(), "100%".to_string())),
+        mem_sparkline_max as f64,
+        Some(("0".to_string(), format!("{mem_sparkline_max} MB"))),
         time_labels,
         format!("peak {mem_peak_pct:.1}%"),
         health_badge(mem_ratio as f64 * 100.0),
@@ -271,8 +299,9 @@ fn draw_stat_panel(
         sections[3]
     };
 
+    let resampled = resample_to_width(&history, plot_area.width as usize);
     let sparkline = Sparkline::default()
-        .data(&history)
+        .data(&resampled)
         .max(y_max.round() as u64)
         .style(Style::default().fg(chart_color));
     frame.render_widget(sparkline, plot_area);
@@ -291,6 +320,20 @@ fn draw_stat_panel(
         Span::raw(right_time),
     ]);
     frame.render_widget(Paragraph::new(line), time_row[1]);
+}
+
+/// Stretches or compresses `data` to exactly `width` columns via
+/// nearest-neighbor sampling. `Sparkline` only draws `min(area.width,
+/// data.len())` bars, left-aligned, so without this the chart falls short
+/// of the block's right edge whenever the terminal is wider than the fixed
+/// `HISTORY_LEN`-sample history buffer (e.g. after resizing wider).
+fn resample_to_width(data: &[u64], width: usize) -> Vec<u64> {
+    if data.is_empty() || width == 0 {
+        return Vec::new();
+    }
+    (0..width)
+        .map(|x| data[x * data.len() / width])
+        .collect()
 }
 
 fn draw_disk_panel(frame: &mut Frame, area: Rect, app: &App) {
