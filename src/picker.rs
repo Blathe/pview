@@ -236,11 +236,16 @@ fn draw(frame: &mut Frame, state: &PickerState) {
 }
 
 fn draw_search_box(frame: &mut Frame, area: Rect, state: &PickerState) {
-    let summary = format!(
-        "{} matches  ·  {} processes total",
+
+    let summary: String = if state.query != "" {
+        format!("{} matches  ·  {} processes total",
         state.filtered.len(),
-        state.all.len()
-    );
+        state.all.len())
+    } else {
+        format!("{} processes total",
+        state.all.len())
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
