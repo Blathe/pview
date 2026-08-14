@@ -224,6 +224,7 @@ fn draw_stat_panel(
         .constraints([
             Constraint::Length(if value.is_some() { 1 } else { 0 }),
             Constraint::Length(1),
+            Constraint::Length(1),
             Constraint::Min(1),
             Constraint::Length(1),
         ])
@@ -256,7 +257,7 @@ fn draw_stat_panel(
         let split = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(label_width), Constraint::Min(1)])
-            .split(sections[2]);
+            .split(sections[3]);
 
         let label_rows = Layout::default()
             .direction(Direction::Vertical)
@@ -267,7 +268,7 @@ fn draw_stat_panel(
 
         split[1]
     } else {
-        sections[2]
+        sections[3]
     };
 
     let sparkline = Sparkline::default()
@@ -280,7 +281,7 @@ fn draw_stat_panel(
     let time_row = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(label_width), Constraint::Min(1)])
-        .split(sections[3]);
+        .split(sections[4]);
     let gap = time_row[1]
         .width
         .saturating_sub((left_time.len() + right_time.len()) as u16);
