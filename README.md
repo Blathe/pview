@@ -6,7 +6,8 @@ Built with [ratatui](https://github.com/ratatui-org/ratatui), [crossterm](https:
 
 ## Screenshots
 
-![pview application](images/pview.gif)
+![pview application](images/dashboard.jpg)
+![pview application](images/picker.jpg)
 
 ## Features
 
