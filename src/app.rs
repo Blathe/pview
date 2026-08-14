@@ -28,6 +28,8 @@ pub struct App {
 
     pub disk_read_rate_mb_s: f32,
     pub disk_write_rate_mb_s: f32,
+    pub disk_read_rate_peak_mb_s: f32,
+    pub disk_write_rate_peak_mb_s: f32,
     pub disk_read_bytes_session: u64,
     pub disk_write_bytes_session: u64,
     baseline_read_bytes: u64,
@@ -72,6 +74,8 @@ impl App {
 
             disk_read_rate_mb_s: 0.0,
             disk_write_rate_mb_s: 0.0,
+            disk_read_rate_peak_mb_s: 0.0,
+            disk_write_rate_peak_mb_s: 0.0,
             disk_read_bytes_session: 0,
             disk_write_bytes_session: 0,
             baseline_read_bytes: initial.disk_total_read_bytes,
@@ -99,6 +103,8 @@ impl App {
                 .saturating_sub(self.last_write_bytes);
             self.disk_read_rate_mb_s = read_delta as f32 / elapsed / BYTES_PER_MB as f32;
             self.disk_write_rate_mb_s = write_delta as f32 / elapsed / BYTES_PER_MB as f32;
+            self.disk_read_rate_peak_mb_s = self.disk_read_rate_peak_mb_s.max(self.disk_read_rate_mb_s);
+            self.disk_write_rate_peak_mb_s = self.disk_write_rate_peak_mb_s.max(self.disk_write_rate_mb_s);
         }
 
         self.last_read_bytes = sample.disk_total_read_bytes;
