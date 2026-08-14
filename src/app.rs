@@ -26,6 +26,10 @@ pub struct App {
     pub mem_current_mb: u64,
     pub mem_peak_mb: u64,
 
+    pub storage_total_mb: u64,
+    pub storage_used_mb: u64,
+    pub storage_mount_point: String,
+
     pub disk_read_rate_mb_s: f32,
     pub disk_write_rate_mb_s: f32,
     pub disk_read_rate_peak_mb_s: f32,
@@ -71,6 +75,13 @@ impl App {
             cpu_peak: initial.cpu_usage,
             mem_current_mb: initial.memory_bytes / BYTES_PER_MB,
             mem_peak_mb: initial.memory_bytes / BYTES_PER_MB,
+
+            storage_total_mb: initial.storage_total_bytes / BYTES_PER_MB,
+            storage_used_mb: initial
+                .storage_total_bytes
+                .saturating_sub(initial.storage_available_bytes)
+                / BYTES_PER_MB,
+            storage_mount_point: initial.storage_mount_point,
 
             disk_read_rate_mb_s: 0.0,
             disk_write_rate_mb_s: 0.0,
@@ -125,6 +136,13 @@ impl App {
         self.cpu_peak = self.cpu_peak.max(self.cpu_current);
         self.mem_current_mb = sample.memory_bytes / BYTES_PER_MB;
         self.mem_peak_mb = self.mem_peak_mb.max(self.mem_current_mb);
+
+        self.storage_total_mb = sample.storage_total_bytes / BYTES_PER_MB;
+        self.storage_used_mb = sample
+            .storage_total_bytes
+            .saturating_sub(sample.storage_available_bytes)
+            / BYTES_PER_MB;
+        self.storage_mount_point = sample.storage_mount_point;
 
         if self.cpu_history.len() == HISTORY_LEN {
             self.cpu_history.pop_front();

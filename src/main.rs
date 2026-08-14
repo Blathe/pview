@@ -7,6 +7,7 @@ mod process;
 mod ui;
 
 use std::io::{self, Stdout};
+use std::path::Path;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
@@ -116,19 +117,25 @@ fn init_terminal_guard() -> Result<TerminalGuard, ExitCode> {
 fn run_dashboard(mut guard: TerminalGuard, sys: System, pid: Pid, tick_interval: Duration) -> ExitCode {
     let process_name;
     let exe_path;
+    let exe_path_buf;
     let started_at_unix_secs;
     {
         let process = sys.process(pid).expect("resolved pid must exist");
         process_name = process.name().to_string_lossy().into_owned();
-        exe_path = process
-            .exe()
+        exe_path_buf = process.exe().map(|p| p.to_path_buf());
+        exe_path = exe_path_buf
+            .as_ref()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "<unknown>".to_string());
         started_at_unix_secs = process.start_time();
     }
     let mem_total_mb = sys.total_memory() / config::BYTES_PER_MB;
 
-    let mut monitor = Monitor::new(sys, pid);
+    let mut monitor = Monitor::new(
+        sys,
+        pid,
+        exe_path_buf.as_deref().unwrap_or_else(|| Path::new("")),
+    );
     let initial_sample = match monitor.sample() {
         Ok(sample) => sample,
         Err(MonitorError::ProcessExited) => {
