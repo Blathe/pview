@@ -5,18 +5,34 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Style};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{
+    Block, BorderType, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
+};
 use ratatui::{Frame, Terminal};
 use sysinfo::{Pid, ProcessesToUpdate, System};
+
+use crate::config::BYTES_PER_MB;
+use crate::ui::TITLE_COLOR;
+
+const SELECTED_BG: Color = Color::Rgb(30, 41, 59);
+const ACCENT_COLOR: Color = TITLE_COLOR;
+
+const ACCENT_W: u16 = 2;
+const PID_W: u16 = 7;
+const GAP_W: u16 = 2;
+const CPU_W: u16 = 7;
+const MEM_W: u16 = 10;
 
 struct PickerEntry {
     pid: Pid,
     name: String,
     parent: Option<Pid>,
     is_group_root: bool,
+    cpu_usage: f32,
+    memory_bytes: u64,
 }
 
 struct PickerState {
@@ -29,7 +45,7 @@ struct PickerState {
 
 impl PickerState {
     fn new(mut all: Vec<PickerEntry>, initial_query: String) -> Self {
-        all.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        sort_by_name(&mut all);
         let mut state = Self {
             all,
             query: initial_query,
@@ -41,6 +57,11 @@ impl PickerState {
         state
     }
 
+    /// Filters `all` down to entries matching `query`. Since `all` is kept
+    /// sorted alphabetically, a plain filter (no re-sort) is enough to keep
+    /// the filtered view in that same stable order — sorting by a live
+    /// metric like CPU% instead made rows jump around between refreshes,
+    /// which made it hard to pick something without typing a search.
     fn refilter(&mut self) {
         if self.query.is_empty() {
             self.filtered = (0..self.all.len()).collect();
@@ -48,32 +69,19 @@ impl PickerState {
         }
 
         let matcher = SkimMatcherV2::default();
-        let mut scored: Vec<(usize, i64)> = self
+        self.filtered = self
             .all
             .iter()
             .enumerate()
-            .filter_map(|(i, entry)| {
-                matcher
-                    .fuzzy_match(&entry.name, &self.query)
-                    .map(|score| (i, score))
-            })
+            .filter_map(|(i, entry)| matcher.fuzzy_match(&entry.name, &self.query).map(|_| i))
             .collect();
-
-        scored.sort_by(|(i_a, score_a), (i_b, score_b)| {
-            score_b
-                .cmp(score_a)
-                .then_with(|| self.all[*i_a].name.cmp(&self.all[*i_b].name))
-        });
-
-        self.filtered = scored.into_iter().map(|(i, _)| i).collect();
     }
 
     fn refresh(&mut self, sys: &System, own_pid: Pid) {
         let remembered_pid = self.filtered.get(self.selected).map(|&i| self.all[i].pid);
 
         self.all = snapshot_processes(sys, own_pid);
-        self.all
-            .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        sort_by_name(&mut self.all);
         self.refilter();
 
         self.selected = remembered_pid
@@ -81,6 +89,10 @@ impl PickerState {
             .unwrap_or(0)
             .min(self.filtered.len().saturating_sub(1));
     }
+}
+
+fn sort_by_name(entries: &mut [PickerEntry]) {
+    entries.sort_by_key(|entry| entry.name.to_lowercase());
 }
 
 fn snapshot_processes(sys: &System, own_pid: Pid) -> Vec<PickerEntry> {
@@ -93,6 +105,8 @@ fn snapshot_processes(sys: &System, own_pid: Pid) -> Vec<PickerEntry> {
             name: p.name().to_string_lossy().into_owned(),
             parent: p.parent(),
             is_group_root: false,
+            cpu_usage: p.cpu_usage(),
+            memory_bytes: p.memory(),
         })
         .collect();
 
@@ -212,7 +226,7 @@ fn draw(frame: &mut Frame, state: &PickerState) {
         .constraints([
             Constraint::Length(3),
             Constraint::Min(0),
-            Constraint::Length(1),
+            Constraint::Length(3),
         ])
         .split(area);
 
@@ -222,55 +236,296 @@ fn draw(frame: &mut Frame, state: &PickerState) {
 }
 
 fn draw_search_box(frame: &mut Frame, area: Rect, state: &PickerState) {
-    let block = Block::default().borders(Borders::ALL).title("SEARCH");
+    let summary = format!(
+        "{} matches  ·  {} processes total",
+        state.filtered.len(),
+        state.all.len()
+    );
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title_top(Line::from("SEARCH").left_aligned())
+        .title_style(Style::default().fg(TITLE_COLOR).add_modifier(Modifier::BOLD))
+        .title_top(
+            Line::from(Span::styled(summary, Style::default().fg(Color::DarkGray)))
+                .right_aligned(),
+        );
+
     let line = if state.query.is_empty() {
         Line::from(Span::styled(
             "type to filter…",
             Style::default().fg(Color::DarkGray),
         ))
     } else {
-        Line::from(format!("{}▏", state.query))
+        Line::from(vec![
+            Span::styled(state.query.clone(), Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled("▏", Style::default().fg(TITLE_COLOR)),
+        ])
     };
     frame.render_widget(Paragraph::new(line).block(block), area);
 }
 
 fn draw_results(frame: &mut Frame, area: Rect, state: &PickerState) {
-    let block = Block::default().borders(Borders::ALL).title("PROCESSES");
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title_top(Line::from("PROCESSES").left_aligned())
+        .title_style(Style::default().fg(TITLE_COLOR).add_modifier(Modifier::BOLD))
+        .title_top(
+            Line::from(Span::styled(
+                "sorted by name  ▲",
+                Style::default().fg(Color::DarkGray),
+            ))
+            .right_aligned(),
+        );
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if inner.width == 0 || inner.height < 2 {
+        return;
+    }
+
+    let body_rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(inner);
+
+    draw_column_headers(frame, body_rows[0]);
 
     if state.filtered.is_empty() {
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 "No matching processes",
                 Style::default().fg(Color::DarkGray),
             ))),
-            inner,
+            body_rows[1],
         );
         return;
     }
 
-    let items: Vec<ListItem> = state
-        .filtered
-        .iter()
-        .map(|&i| {
-            let entry = &state.all[i];
-            let suffix = if entry.is_group_root { " (parent)" } else { "" };
-            ListItem::new(format!("PID: {} | {}{}", entry.pid, entry.name, suffix))
-        })
-        .collect();
+    let capacity = body_rows[1].height as usize;
+    let total = state.filtered.len();
+    let offset = draw_process_rows(frame, body_rows[1], state);
 
-    let list = List::new(items)
-        .block(block)
-        .highlight_style(Style::default().bg(Color::Cyan).fg(Color::Black));
+    if total > capacity {
+        let scrollbar = Scrollbar::default()
+            .orientation(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(None)
+            .end_symbol(None)
+            .thumb_style(Style::default().fg(TITLE_COLOR))
+            .track_style(Style::default().fg(Color::DarkGray));
+        let content_capacity = capacity.saturating_sub(1).max(1);
+        let mut scrollbar_state = ScrollbarState::new(total)
+            .viewport_content_length(content_capacity)
+            .position(offset);
+        frame.render_stateful_widget(
+            scrollbar,
+            area.inner(ratatui::layout::Margin::new(0, 1)),
+            &mut scrollbar_state,
+        );
+    }
+}
 
-    let mut list_state = ListState::default();
-    list_state.select(Some(state.selected));
+fn columns(area: Rect) -> std::rc::Rc<[Rect]> {
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(ACCENT_W),
+            Constraint::Length(PID_W),
+            Constraint::Length(GAP_W),
+            Constraint::Min(10),
+            Constraint::Length(GAP_W),
+            Constraint::Length(CPU_W),
+            Constraint::Length(GAP_W),
+            Constraint::Length(MEM_W),
+        ])
+        .split(area)
+}
 
-    frame.render_stateful_widget(list, area, &mut list_state);
+fn draw_column_headers(frame: &mut Frame, area: Rect) {
+    let cols = columns(area);
+    let style = Style::default().fg(Color::DarkGray);
+
+    frame.render_widget(
+        Paragraph::new("PID").style(style).alignment(Alignment::Right),
+        cols[1],
+    );
+    frame.render_widget(Paragraph::new("PROCESS").style(style), cols[3]);
+    frame.render_widget(
+        Paragraph::new("CPU%").style(style).alignment(Alignment::Right),
+        cols[5],
+    );
+    frame.render_widget(
+        Paragraph::new("MEM").style(style).alignment(Alignment::Right),
+        cols[7],
+    );
+}
+
+/// Renders as many filtered rows as fit `area`, keeping the selected row in
+/// view. When the filtered list overflows the available height, the last
+/// row is replaced with a "N more below" hint rather than silently cutting
+/// a row off mid-list.
+fn draw_process_rows(frame: &mut Frame, area: Rect, state: &PickerState) -> usize {
+    let capacity = area.height as usize;
+    let total = state.filtered.len();
+
+    let (visible, offset, more_below) = if total <= capacity {
+        (total, 0, 0)
+    } else {
+        let content_capacity = capacity.saturating_sub(1).max(1);
+        let offset = state
+            .selected
+            .saturating_sub(content_capacity.saturating_sub(1))
+            .min(total.saturating_sub(content_capacity));
+        let more_below = total - (offset + content_capacity);
+        (content_capacity, offset, more_below)
+    };
+
+    let row_rects = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(vec![Constraint::Length(1); visible + usize::from(more_below > 0)])
+        .split(area);
+
+    for (row_idx, &filtered_idx) in state.filtered[offset..offset + visible].iter().enumerate() {
+        let entry = &state.all[filtered_idx];
+        draw_process_row(frame, row_rects[row_idx], entry, offset + row_idx == state.selected);
+    }
+
+    if more_below > 0 {
+        let hint = format!(
+            "▼ {more_below} more match{} below — keep scrolling",
+            if more_below == 1 { "" } else { "es" }
+        );
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(Color::DarkGray)))),
+            row_rects[visible],
+        );
+    }
+
+    offset
+}
+
+fn draw_process_row(frame: &mut Frame, area: Rect, entry: &PickerEntry, selected: bool) {
+    if selected {
+        frame.render_widget(Block::default().style(Style::default().bg(SELECTED_BG)), area);
+    }
+
+    let cols = columns(area);
+
+    if selected {
+        frame.render_widget(
+            Paragraph::new("▎").style(Style::default().fg(ACCENT_COLOR)),
+            cols[0],
+        );
+    }
+
+    frame.render_widget(
+        Paragraph::new(entry.pid.to_string())
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Right),
+        cols[1],
+    );
+
+    frame.render_widget(Paragraph::new(name_line(entry, selected)), cols[3]);
+
+    let cpu_style = if selected {
+        Style::default().add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(cpu_color(entry.cpu_usage))
+    };
+    frame.render_widget(
+        Paragraph::new(format!("{:.1}", entry.cpu_usage))
+            .style(cpu_style)
+            .alignment(Alignment::Right),
+        cols[5],
+    );
+
+    frame.render_widget(
+        Paragraph::new(format_mem(entry.memory_bytes))
+            .style(Style::default().fg(if selected { Color::White } else { Color::Gray }))
+            .alignment(Alignment::Right),
+        cols[7],
+    );
+}
+
+/// Splits the process name at its extension so the base name reads as the
+/// primary, accented part of the row (matching the app's title-color accent
+/// elsewhere), while the extension stays a plain, less prominent color. On
+/// the selected row everything switches to a flat bold white instead, since
+/// the row's own background highlight already carries the emphasis.
+fn name_line(entry: &PickerEntry, selected: bool) -> Line<'static> {
+    let mut spans = if selected {
+        vec![Span::styled(
+            entry.name.clone(),
+            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        )]
+    } else {
+        match entry.name.rfind('.') {
+            Some(dot) => vec![
+                Span::styled(
+                    entry.name[..dot].to_string(),
+                    Style::default().fg(TITLE_COLOR).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(entry.name[dot..].to_string(), Style::default().fg(Color::White)),
+            ],
+            None => vec![Span::styled(
+                entry.name.clone(),
+                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            )],
+        }
+    };
+
+    if entry.is_group_root {
+        spans.push(Span::styled(" (parent)", Style::default().fg(Color::DarkGray)));
+    }
+
+    Line::from(spans)
+}
+
+/// Thresholds tuned for single-process CPU% (as opposed to the dashboard's
+/// system-wide health_badge thresholds), since most processes in a picker
+/// list sit well under 100% even when notably busy.
+fn cpu_color(pct: f32) -> Color {
+    if pct >= 20.0 {
+        Color::Red
+    } else if pct >= 10.0 {
+        Color::Rgb(249, 115, 22)
+    } else if pct >= 2.0 {
+        Color::Yellow
+    } else {
+        Color::Green
+    }
+}
+
+fn format_mem(bytes: u64) -> String {
+    let mb = bytes / BYTES_PER_MB;
+    if mb >= 1024 {
+        format!("{:.1} GB", mb as f64 / 1024.0)
+    } else {
+        format!("{mb} MB")
+    }
 }
 
 fn draw_footer(frame: &mut Frame, area: Rect) {
-    let line = Line::from(Span::raw("  ↑↓ Navigate    Enter Select    Esc Cancel"));
-    frame.render_widget(Paragraph::new(line), area);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let key_style = Style::default()
+        .bg(TITLE_COLOR)
+        .fg(Color::Black)
+        .add_modifier(Modifier::BOLD);
+
+    let line = Line::from(vec![
+        Span::raw(" "),
+        Span::raw("↑↓"),
+        Span::raw(" Navigate    "),
+        Span::styled(" Enter ", key_style),
+        Span::raw(" Select    "),
+        Span::styled(" Esc ", key_style),
+        Span::raw(" Cancel"),
+    ]);
+    frame.render_widget(Paragraph::new(line), inner);
 }

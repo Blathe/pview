@@ -10,7 +10,7 @@ use crate::config::{BYTES_PER_MB, HISTORY_LEN};
 const CPU_COLOR: Color = Color::Rgb(59, 130, 246); // blue
 const MEM_COLOR: Color = Color::Rgb(249, 115, 22); // orange
 const STORAGE_COLOR: Color = Color::Rgb(168, 85, 247); // purple
-const TITLE_COLOR: Color = Color::LightBlue;
+pub(crate) const TITLE_COLOR: Color = Color::LightBlue;
 
 pub fn draw(frame: &mut Frame, app: &App) {
     let area = frame.area();
