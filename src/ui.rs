@@ -91,26 +91,9 @@ fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(1); 2])
         .split(cols[0]);
-    let right = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1); 2])
-        .split(cols[1]);
 
     render_kv(frame, left[0], "Uptime", format_duration(app.run_time_secs));
     render_kv(frame, left[1], "Executable", truncate_exe_path(&app.exe_path));
-
-    render_kv(
-        frame,
-        right[0],
-        "Memory Peak (all time)",
-        format!("{} MB", app.mem_peak_mb),
-    );
-    render_kv(
-        frame,
-        right[1],
-        "CPU Peak (all time)",
-        format!("{:.1}%", app.cpu_peak),
-    );
 }
 
 /// Returns the display text and color for the process/monitoring status,
