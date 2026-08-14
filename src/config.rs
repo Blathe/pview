@@ -1,6 +1,16 @@
 pub const DEFAULT_INTERVAL_MS: u64 = 1000;
 pub const HISTORY_LEN: usize = 60;
 
+/// Spacing between samples in `App::mem_trend_samples`, the long-lived
+/// buffer used for the "memory over 1h" trend badge. Sampled far less
+/// often than the dashboard tick rate so a modest, fixed-size buffer can
+/// cover a full hour.
+pub const MEM_TREND_SAMPLE_INTERVAL_SECS: u64 = 60;
+
+/// Max samples kept in `App::mem_trend_samples` — one hour of history at
+/// `MEM_TREND_SAMPLE_INTERVAL_SECS` spacing.
+pub const MEM_TREND_MAX_SAMPLES: usize = 60;
+
 /// Binary (1024-based) byte-to-MB divisor, used consistently everywhere a
 /// byte count is converted to MB or GB so displayed units match Windows
 /// tools (Task Manager, Explorer, Resource Monitor), which all compute this

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -139,6 +141,7 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
         frame,
         cols[0],
         "CPU",
+        None,
         Some(format!("{:.1}%", app.cpu_current)),
         cpu_history,
         100.0,
@@ -164,10 +167,15 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
         .map(|&mb| (mb as f64 / mem_total_mb * 100.0).round() as u64)
         .collect();
 
+    let mem_trend_label = app
+        .mem_trend_mb_per_hr()
+        .map(|(rate, elapsed)| format_mem_trend(rate, elapsed));
+
     draw_stat_panel(
         frame,
         cols[1],
         "MEMORY",
+        mem_trend_label,
         Some(format!(
             "{} MB / {}",
             app.mem_current_mb,
@@ -196,10 +204,33 @@ fn format_mb_as_gb(total_mb: u64) -> String {
     }
 }
 
+/// Formats the "memory over 1h" trend badge, e.g. "▲ +4.2 MB/hr" once a
+/// full hour of samples is available, or "▲ +4.2 MB/hr (12m)" while the
+/// long-lived sample buffer is still warming up. Flat/negligible drift
+/// (under 0.05 MB/hr either way) shows a neutral "flat" arrow instead of
+/// noise from rounding.
+fn format_mem_trend(rate_mb_per_hr: f32, elapsed: Duration) -> String {
+    let arrow = if rate_mb_per_hr.abs() < 0.05 {
+        "►"
+    } else if rate_mb_per_hr > 0.0 {
+        "▲"
+    } else {
+        "▼"
+    };
+    let rate_text = format!("{arrow} {rate_mb_per_hr:+.1} MB/hr");
+    if elapsed.as_secs() < 3600 {
+        let minutes = (elapsed.as_secs() / 60).max(1);
+        format!("{rate_text} ({minutes}m)")
+    } else {
+        rate_text
+    }
+}
+
 fn draw_stat_panel(
     frame: &mut Frame,
     area: Rect,
     title: &str,
+    title_extra: Option<String>,
     value: Option<String>,
     history: Vec<u64>,
     y_max: f64,
@@ -211,12 +242,17 @@ fn draw_stat_panel(
     usage_label: String,
     chart_color: Color,
 ) {
-    let block = Block::default()
+    let mut block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(title)
+        .title_top(Line::from(title).left_aligned())
         .title_style(Style::default().fg(TITLE_COLOR).add_modifier(Modifier::BOLD))
         .padding(Padding::uniform(1));
+    if let Some(extra) = title_extra {
+        block = block.title_top(
+            Line::from(Span::styled(extra, Style::default().fg(Color::DarkGray))).right_aligned(),
+        );
+    }
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
