@@ -21,7 +21,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .constraints([
             Constraint::Length(1),
             Constraint::Length(5),
-            Constraint::Length(20),
+            Constraint::Length(12),
             Constraint::Length(11),
             Constraint::Length(7),
             Constraint::Fill(1),
@@ -353,9 +353,23 @@ fn draw_stat_panel(
     };
 
     let resampled = resample_to_width(&history, plot_area.width as usize, HISTORY_LEN);
+    let max = y_max.round() as u64;
+    // ratatui's Sparkline computes each bar's height as `value * height * 8 /
+    // max`, floored. On a short viewport the plot area may only be 1-2 rows
+    // (8-16 eighths of resolution against the fixed 0-100 scale), so any
+    // genuinely nonzero reading below roughly max/levels floors straight to
+    // zero and disappears. Floor real (nonzero) samples up to whatever value
+    // guarantees at least one visible eighth, so low usage still shows as a
+    // sliver instead of vanishing; true zero/no-data samples stay blank.
+    let levels = plot_area.height as u64 * 8;
+    let min_visible = if levels == 0 { 0 } else { max.div_ceil(levels).max(1) };
+    let resampled: Vec<u64> = resampled
+        .into_iter()
+        .map(|v| if v > 0 { v.max(min_visible) } else { 0 })
+        .collect();
     let sparkline = Sparkline::default()
         .data(&resampled)
-        .max(y_max.round() as u64)
+        .max(max)
         .style(Style::default().fg(chart_color));
     frame.render_widget(sparkline, plot_area);
 
