@@ -362,7 +362,11 @@ fn draw_stat_panel(
     // guarantees at least one visible eighth, so low usage still shows as a
     // sliver instead of vanishing; true zero/no-data samples stay blank.
     let levels = plot_area.height as u64 * 8;
-    let min_visible = if levels == 0 { 0 } else { max.div_ceil(levels).max(1) };
+    let min_visible = if levels == 0 {
+        0
+    } else {
+        max.div_ceil(levels).max(1)
+    };
     let resampled: Vec<u64> = resampled
         .into_iter()
         .map(|v| if v > 0 { v.max(min_visible) } else { 0 })
