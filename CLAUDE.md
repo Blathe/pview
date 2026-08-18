@@ -16,6 +16,7 @@ cargo run                   # no target -> interactive fuzzy picker
 cargo check                 # fast type-check
 cargo clippy                # lint
 cargo fmt                   # format
+cargo check && cargo fmt --check && cargo clippy && cargo build   # full health check before committing
 ```
 
 There are no automated tests in this repo currently.
@@ -24,17 +25,16 @@ There are no automated tests in this repo currently.
 
 Data flows in one direction each tick: `Monitor` samples `sysinfo` -> produces a `Sample` -> `App::update` folds it into UI-ready state -> `ui::draw` renders it. Modules:
 
-- **`main.rs`** — entry point and the only place that owns the terminal/event loop. Resolves the CLI target to a PID (going through the picker if none/ambiguous), then runs a fixed-tick loop: poll input for the remaining tick budget, sample on tick boundary (unless paused), redraw every iteration. `TerminalGuard` (RAII) and `install_panic_hook` guarantee raw mode / alternate screen are torn down even on panic or early error paths — preserve this if touching terminal setup.
-- **`cli.rs`** — `clap`-derived `Args`: an optional `target` (name or PID) and `--interval` (ms).
-- **`process.rs`** — `resolve_target`: bare integers are always treated as a PID; otherwise matches process names case-insensitively and reports `Found` / `NotFound` / `Ambiguous`.
-- **`picker.rs`** — the interactive fuzzy-search process picker (`fuzzy_matcher::skim`), used when no target is given or a name is ambiguous. Self-contained event loop, mirrors the same poll/refresh-on-tick pattern as `main.rs`'s dashboard loop. By design, only Esc/Up/Down/Enter/Backspace are special-cased — every other printable char (including `q`/`j`/`k`) is filter input, since those letters legitimately appear in process names.
-- **`monitor.rs`** — `Monitor` wraps a `sysinfo::System` scoped to one PID and produces a `Sample` per call to `sample()`; returns `MonitorError::ProcessExited` once the process disappears.
-- **`app.rs`** — `App` is the UI state machine: rolling CPU/memory history (`VecDeque`, capped at `HISTORY_LEN`), all-time peaks, disk I/O rate computed from byte deltas between samples (with a session baseline so totals start at zero), pause/quit/exited flags, and `handle_key` for the dashboard keybindings (`q`/`p`/`r`).
-- **`ui.rs`** — pure rendering from `&App` into `ratatui` widgets (braille line charts for CPU/mem, disk panel, process info panel, footer). No state mutation happens here.
+- **`main.rs`** — owns the terminal/event loop. Resolves the CLI target to a PID (via the picker if none/ambiguous), then runs a fixed-tick loop: poll input, sample on tick boundary (unless paused), redraw every iteration. `TerminalGuard` (RAII) + `install_panic_hook` guarantee raw mode / alternate screen are torn down even on panic — preserve this if touching terminal setup.
+- **`cli.rs`** — `clap`-derived `Args`: optional `target` (name or PID) and `--interval` (ms).
+- **`process.rs`** — `resolve_target`: bare integers are always a PID; otherwise matches process names case-insensitively, reporting `Found` / `NotFound` / `Ambiguous`.
+- **`picker.rs`** — interactive fuzzy-search process picker (`fuzzy_matcher::skim`), used when no target is given or a name is ambiguous. Only Esc/Up/Down/Enter/Backspace are special-cased — every other char (including `q`/`j`/`k`) is filter input, since those letters legitimately appear in process names.
+- **`monitor.rs`** — `Monitor` wraps a `sysinfo::System` scoped to one PID, producing a `Sample` per call to `sample()`; returns `MonitorError::ProcessExited` once the process disappears.
+- **`app.rs`** — UI state machine: rolling CPU/memory history (`VecDeque`, capped at `HISTORY_LEN`), all-time peaks, disk I/O rate from byte deltas (session baseline so totals start at zero), pause/quit/exited flags, `handle_key` for dashboard keybindings (`q`/`p`/`r`).
+- **`ui.rs`** — pure rendering from `&App` into `ratatui` widgets. No state mutation.
 - **`config.rs`** — shared constants (`DEFAULT_INTERVAL_MS`, `HISTORY_LEN`).
 
 ### Key conventions
 
-- The dashboard and the picker each run their own event loop with the same shape: `event::poll(remaining_timeout)` for input, sample/refresh only once a full tick has elapsed, redraw unconditionally every iteration.
-- Memory/disk values move through the codebase as raw bytes (`u64`) from `sysinfo`. Byte-to-MB conversion uses the shared `config::BYTES_PER_MB` constant (binary, 1024*1024) everywhere it happens (`main.rs`, `app.rs`, `ui.rs`), and MB-to-GB display in `format_mem_total` (`ui.rs`) also uses 1024-based math — this matches how Windows tools (Task Manager, Explorer) compute despite labeling the units "MB"/"GB". Keep any new byte-to-MB/GB conversion on this same binary convention rather than introducing decimal math.
-- Terminal setup is deliberately lazy in `main.rs`: it's deferred until after the target is resolved to `Found`/`Ambiguous`, so a `NotFound` error can print to a plain, untouched terminal instead of the alternate screen.
+- Memory/disk values are raw bytes (`u64`) from `sysinfo`. Byte-to-MB/GB conversion uses binary math (1024-based, via `config::BYTES_PER_MB`) everywhere, matching Windows tools despite the "MB"/"GB" labels — keep new conversions on this convention, not decimal.
+- Terminal setup in `main.rs` is deferred until the target resolves to `Found`/`Ambiguous`, so a `NotFound` error prints to a plain terminal instead of the alternate screen.

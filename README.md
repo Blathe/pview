@@ -12,6 +12,7 @@ Built with [ratatui](https://github.com/ratatui-org/ratatui), [crossterm](https:
 ## Features
 
 - **Live CPU and memory graphs** — sparkline charts on a fixed 0–100% baseline (CPU: % of one core; memory: % of total system RAM) with a rolling time window (e.g. last 60s), plus a peak-since-start reading and an at-a-glance health badge (OK / HIGH / CRIT).
+- **Memory trend** — a `▲/▼/► ±X MB/hr` badge on the Memory panel, tracking drift over up to the last hour so slow leaks are visible without watching the graph.
 - **Disk I/O** — current read/write rate as a gauge against the session peak, plus cumulative totals for the monitoring session.
 - **Storage** — used vs. total capacity of the disk backing the process's executable, with a gauge and free-space total.
 - **Process info** — status, PID, start time, uptime, and executable path.
