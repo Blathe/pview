@@ -6,8 +6,8 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph, Sparkline};
 
-use crate::app::App;
-use crate::config::{APP_VERSION, BYTES_PER_MB, HISTORY_LEN};
+use crate::app::{App, CpuViewMode};
+use crate::config::{APP_VERSION, BYTES_PER_MB, CPU_RELATIVE_AXIS_HEADROOM, HISTORY_LEN};
 
 const CPU_COLOR: Color = Color::Rgb(59, 130, 246); // blue
 const MEM_COLOR: Color = Color::Rgb(249, 115, 22); // orange
@@ -157,30 +157,90 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
     let window_secs = HISTORY_LEN as f64 * app.tick_interval.as_secs_f64();
     let time_labels = (format!("{window_secs:.0}s"), "0s".to_string());
 
-    let cpu_ratio = app.cpu_current / 100.0;
     let cpu_history: Vec<u64> = app
         .cpu_history
         .iter()
         .map(|v| v.round().max(0.0) as u64)
         .collect();
 
-    // The sparkline shares the same fixed 0-100% scale as the usage bar/
-    // header, so the baseline is stable and the bar's height is a direct
-    // read of actual usage instead of shifting as the window's peak changes.
+    let core_count = app.core_count.max(1);
+
+    // The usage gauge and health badge always read as a percentage of total
+    // system CPU capacity, regardless of `cpu_view_mode` below, so the bar
+    // stays a stable, at-a-glance "how much of the machine" reading instead
+    // of changing meaning (or getting stuck maxed-out past 1 core's worth of
+    // usage) when the mode is toggled.
+    let cpu_total_ratio = app.cpu_current / 100.0 / core_count as f32;
+    let cpu_bar_label = format!("{:.1}%", cpu_total_ratio * 100.0);
+    let cpu_badge = health_badge((cpu_total_ratio * 100.0) as f64);
+
+    let peak_in_window_pct = cpu_history.iter().copied().max().unwrap_or(0) as f64;
+
+    // The mode only changes the value/peak text and the sparkline's scale.
+    let (cpu_mode_label, cpu_value, cpu_peak_label) = match app.cpu_view_mode {
+        CpuViewMode::PercentOfTotal => (
+            "System Usage",
+            format!("{:.1}%", app.cpu_current),
+            format!("peak {:.1}%", app.cpu_peak),
+        ),
+        CpuViewMode::Cores => (
+            "Core Usage",
+            format!("{:.2} cores", app.cpu_current / 100.0),
+            format!("peak {:.2} cores", app.cpu_peak / 100.0),
+        ),
+        CpuViewMode::Relative => (
+            "Relative Usage",
+            format!("{:.1}%", app.cpu_current),
+            // The windowed peak driving this mode's axis, not the all-time
+            // `cpu_peak` shown by the other two modes — those are frequently
+            // different numbers, so this is labeled distinctly to avoid
+            // implying it's the same reading.
+            format!("60s peak {peak_in_window_pct:.1}%"),
+        ),
+    };
+
+    let (cpu_y_max, cpu_axis_labels) = match app.cpu_view_mode {
+        CpuViewMode::PercentOfTotal => (100.0, ("0%".to_string(), "100%".to_string())),
+        CpuViewMode::Cores => {
+            // Auto-fits the axis to the visible window's peak (rounded up to
+            // the next whole core, minimum 1) instead of a fixed
+            // 0-`core_count` scale, so modest usage on a many-core machine
+            // doesn't render as a flat line hugging the bottom.
+            let axis_max_cores = (peak_in_window_pct / 100.0).ceil().max(1.0);
+            (
+                axis_max_cores * 100.0,
+                ("0".to_string(), format!("{axis_max_cores:.0}")),
+            )
+        }
+        CpuViewMode::Relative => {
+            // Axis tops out at the window's peak plus headroom, rather than
+            // exactly at the peak, so a current reading sitting at or near
+            // the recent peak still renders with visible room above it
+            // instead of hugging the top of the chart — the whole point of
+            // this view is seeing current usage *relative to* the peak, not
+            // just re-deriving the peak itself.
+            let axis_max_pct = (peak_in_window_pct * CPU_RELATIVE_AXIS_HEADROOM).max(1.0);
+            (
+                axis_max_pct,
+                ("0%".to_string(), format!("{axis_max_pct:.0}%")),
+            )
+        }
+    };
+
     draw_stat_panel(
         frame,
         cols[0],
         "CPU",
-        None,
-        Some(format!("{:.1}%", app.cpu_current)),
+        Some(cpu_mode_label.to_string()),
+        Some(cpu_value),
         cpu_history,
-        100.0,
-        Some(("0%".to_string(), "100%".to_string())),
+        cpu_y_max,
+        Some(cpu_axis_labels),
         time_labels.clone(),
-        format!("peak {:.1}%", app.cpu_peak),
-        health_badge(app.cpu_current as f64),
-        cpu_ratio,
-        format!("{:.1}%", app.cpu_current),
+        cpu_peak_label,
+        cpu_badge,
+        cpu_total_ratio,
+        cpu_bar_label,
         CPU_COLOR,
     );
 
@@ -649,7 +709,9 @@ fn draw_footer(frame: &mut Frame, area: Rect, _app: &App) {
         Span::styled(" p ", key_style),
         Span::raw(" Pause    "),
         Span::styled(" r ", key_style),
-        Span::raw(" Reset graphs"),
+        Span::raw(" Reset graphs    "),
+        Span::styled(" c ", key_style),
+        Span::raw(" CPU view"),
     ]);
     frame.render_widget(Paragraph::new(line), inner);
 }

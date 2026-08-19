@@ -9,13 +9,44 @@ use crate::config::{
 };
 use crate::monitor::Sample;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CpuViewMode {
+    /// Percent of one core (sysinfo's raw `cpu_usage()` scale) — can exceed
+    /// 100% on multi-core machines, e.g. 250% = 2.5 cores busy. Graph axis
+    /// is a fixed 0-100%.
+    PercentOfTotal,
+    /// The same underlying value rescaled/labeled in terms of cores, e.g.
+    /// 2.5 cores instead of 250%. Graph axis auto-fits to the visible
+    /// window's peak, rounded up to the next whole core.
+    Cores,
+    /// Same value/units as `PercentOfTotal`, but the graph axis tops out at
+    /// the visible window's peak percent plus headroom
+    /// (`CPU_RELATIVE_AXIS_HEADROOM`) instead of a fixed 0-100%, so the
+    /// current reading is shown relative to recent history instead of
+    /// hugging the top of the chart whenever it's close to the peak.
+    Relative,
+}
+
+impl CpuViewMode {
+    pub fn next(self) -> Self {
+        match self {
+            CpuViewMode::PercentOfTotal => CpuViewMode::Cores,
+            CpuViewMode::Cores => CpuViewMode::Relative,
+            CpuViewMode::Relative => CpuViewMode::PercentOfTotal,
+        }
+    }
+}
+
 pub struct App {
     pub pid: Pid,
     pub process_name: String,
     pub exe_path: String,
     pub started_at_unix_secs: u64,
     pub mem_total_mb: u64,
+    pub core_count: usize,
     pub tick_interval: Duration,
+
+    pub cpu_view_mode: CpuViewMode,
 
     pub status: ProcessStatus,
     pub run_time_secs: u64,
@@ -62,6 +93,7 @@ impl App {
         exe_path: String,
         started_at_unix_secs: u64,
         mem_total_mb: u64,
+        core_count: usize,
         tick_interval: Duration,
         initial: Sample,
     ) -> Self {
@@ -72,7 +104,10 @@ impl App {
             exe_path,
             started_at_unix_secs,
             mem_total_mb,
+            core_count,
             tick_interval,
+
+            cpu_view_mode: CpuViewMode::PercentOfTotal,
 
             status: initial.status,
             run_time_secs: initial.run_time_secs,
@@ -201,6 +236,9 @@ impl App {
         match key {
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Char('p') => self.paused = !self.paused,
+            KeyCode::Char('c') => {
+                self.cpu_view_mode = self.cpu_view_mode.next();
+            }
             KeyCode::Char('r') => {
                 self.cpu_history.clear();
                 self.mem_history.clear();

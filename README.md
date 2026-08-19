@@ -11,7 +11,7 @@ Built with [ratatui](https://github.com/ratatui-org/ratatui), [crossterm](https:
 
 ## Features
 
-- **Live CPU and memory graphs** — sparkline charts on a fixed 0–100% baseline (CPU: % of one core; memory: % of total system RAM) with a rolling time window (e.g. last 60s), plus a peak-since-start reading and an at-a-glance health badge (OK / HIGH / CRIT).
+- **Live CPU and memory graphs** — sparkline charts with a rolling time window (e.g. last 60s), plus a peak-since-start reading and an at-a-glance health badge (OK / HIGH / CRIT), both always reading as a percentage of total capacity (all cores / all system RAM) so they stay meaningful regardless of display mode. Memory's graph and value both track % of total RAM. The CPU panel cycles (`c`) through three views, shown in the panel title: **System Usage** (% of one core, can exceed 100% on multi-core machines, fixed 0-100% graph axis), **Core Usage** (the same value in cores, e.g. 250% ↔ 2.5 cores, graph axis auto-fits to the visible window's peak rounded up to the next whole core), and **Relative Usage** (percent again, but the graph axis tops out at the visible window's peak plus 50% headroom instead of a fixed 100%, so current usage is shown relative to the recent peak instead of hugging the top of the chart whenever it's close to it).
 - **Memory trend** — a `▲/▼/► ±X MB/hr` badge on the Memory panel, tracking drift over up to the last hour so slow leaks are visible without watching the graph.
 - **Disk I/O** — current read/write rate as a gauge against the session peak, plus cumulative totals for the monitoring session.
 - **Storage** — used vs. total capacity of the disk backing the process's executable, with a gauge and free-space total.
@@ -60,6 +60,7 @@ If a name matches more than one running process, `pview` opens the same interact
 | `q` | Quit |
 | `p` | Pause / resume the display |
 | `r` | Reset the CPU/memory graph history |
+| `c` | Toggle CPU view between % of one core and cores used |
 
 **Process picker**
 
