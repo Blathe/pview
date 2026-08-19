@@ -9,13 +9,26 @@ use crate::config::{
 };
 use crate::monitor::Sample;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CpuViewMode {
+    /// Percent of one core (sysinfo's raw `cpu_usage()` scale) — can exceed
+    /// 100% on multi-core machines, e.g. 250% = 2.5 cores busy.
+    PercentOfTotal,
+    /// The same underlying value rescaled/labeled in terms of cores, e.g.
+    /// 2.5 cores instead of 250%.
+    Cores,
+}
+
 pub struct App {
     pub pid: Pid,
     pub process_name: String,
     pub exe_path: String,
     pub started_at_unix_secs: u64,
     pub mem_total_mb: u64,
+    pub core_count: usize,
     pub tick_interval: Duration,
+
+    pub cpu_view_mode: CpuViewMode,
 
     pub status: ProcessStatus,
     pub run_time_secs: u64,
@@ -62,6 +75,7 @@ impl App {
         exe_path: String,
         started_at_unix_secs: u64,
         mem_total_mb: u64,
+        core_count: usize,
         tick_interval: Duration,
         initial: Sample,
     ) -> Self {
@@ -72,7 +86,10 @@ impl App {
             exe_path,
             started_at_unix_secs,
             mem_total_mb,
+            core_count,
             tick_interval,
+
+            cpu_view_mode: CpuViewMode::PercentOfTotal,
 
             status: initial.status,
             run_time_secs: initial.run_time_secs,
@@ -201,6 +218,12 @@ impl App {
         match key {
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Char('p') => self.paused = !self.paused,
+            KeyCode::Char('c') => {
+                self.cpu_view_mode = match self.cpu_view_mode {
+                    CpuViewMode::PercentOfTotal => CpuViewMode::Cores,
+                    CpuViewMode::Cores => CpuViewMode::PercentOfTotal,
+                };
+            }
             KeyCode::Char('r') => {
                 self.cpu_history.clear();
                 self.mem_history.clear();

@@ -6,7 +6,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph, Sparkline};
 
-use crate::app::App;
+use crate::app::{App, CpuViewMode};
 use crate::config::{APP_VERSION, BYTES_PER_MB, HISTORY_LEN};
 
 const CPU_COLOR: Color = Color::Rgb(59, 130, 246); // blue
@@ -157,30 +157,64 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
     let window_secs = HISTORY_LEN as f64 * app.tick_interval.as_secs_f64();
     let time_labels = (format!("{window_secs:.0}s"), "0s".to_string());
 
-    let cpu_ratio = app.cpu_current / 100.0;
     let cpu_history: Vec<u64> = app
         .cpu_history
         .iter()
         .map(|v| v.round().max(0.0) as u64)
         .collect();
 
-    // The sparkline shares the same fixed 0-100% scale as the usage bar/
-    // header, so the baseline is stable and the bar's height is a direct
-    // read of actual usage instead of shifting as the window's peak changes.
+    // The core count is fixed for the process's lifetime, so this only
+    // affects axis scale/labels/formatting below, not what's stored in
+    // `cpu_history` (still raw percent-of-one-core either way).
+    let core_count = app.core_count.max(1);
+    let (
+        cpu_y_max,
+        cpu_axis_labels,
+        cpu_value,
+        cpu_peak_label,
+        cpu_badge,
+        cpu_ratio,
+        cpu_bar_label,
+    ) = match app.cpu_view_mode {
+        CpuViewMode::PercentOfTotal => (
+            100.0,
+            ("0%".to_string(), "100%".to_string()),
+            format!("{:.1}%", app.cpu_current),
+            format!("peak {:.1}%", app.cpu_peak),
+            health_badge(app.cpu_current as f64),
+            app.cpu_current / 100.0,
+            format!("{:.1}%", app.cpu_current),
+        ),
+        CpuViewMode::Cores => (
+            core_count as f64 * 100.0,
+            ("0".to_string(), format!("{core_count}")),
+            format!("{:.2} cores", app.cpu_current / 100.0),
+            format!("peak {:.2} cores", app.cpu_peak / 100.0),
+            // Scaled to fraction-of-total-capacity so a busy multi-core
+            // process isn't always CRIT regardless of headroom.
+            health_badge((app.cpu_current / 100.0 / core_count as f32 * 100.0) as f64),
+            app.cpu_current / 100.0 / core_count as f32,
+            format!("{:.2} cores", app.cpu_current / 100.0),
+        ),
+    };
+
+    // The sparkline shares the same fixed scale as the usage bar/header, so
+    // the baseline is stable and the bar's height is a direct read of actual
+    // usage instead of shifting as the window's peak changes.
     draw_stat_panel(
         frame,
         cols[0],
         "CPU",
         None,
-        Some(format!("{:.1}%", app.cpu_current)),
+        Some(cpu_value),
         cpu_history,
-        100.0,
-        Some(("0%".to_string(), "100%".to_string())),
+        cpu_y_max,
+        Some(cpu_axis_labels),
         time_labels.clone(),
-        format!("peak {:.1}%", app.cpu_peak),
-        health_badge(app.cpu_current as f64),
+        cpu_peak_label,
+        cpu_badge,
         cpu_ratio,
-        format!("{:.1}%", app.cpu_current),
+        cpu_bar_label,
         CPU_COLOR,
     );
 
@@ -649,7 +683,9 @@ fn draw_footer(frame: &mut Frame, area: Rect, _app: &App) {
         Span::styled(" p ", key_style),
         Span::raw(" Pause    "),
         Span::styled(" r ", key_style),
-        Span::raw(" Reset graphs"),
+        Span::raw(" Reset graphs    "),
+        Span::styled(" c ", key_style),
+        Span::raw(" CPU view"),
     ]);
     frame.render_widget(Paragraph::new(line), inner);
 }

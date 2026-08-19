@@ -142,6 +142,7 @@ fn run_dashboard(
         started_at_unix_secs = process.start_time();
     }
     let mem_total_mb = sys.total_memory() / config::BYTES_PER_MB;
+    let core_count = sys.cpus().len();
 
     let mut monitor = Monitor::new(
         sys,
@@ -163,6 +164,7 @@ fn run_dashboard(
         exe_path,
         started_at_unix_secs,
         mem_total_mb,
+        core_count,
         tick_interval,
         initial_sample,
     );
