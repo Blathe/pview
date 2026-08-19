@@ -247,3 +247,79 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample() -> Sample {
+        Sample {
+            cpu_usage: 0.0,
+            memory_bytes: 0,
+            disk_total_read_bytes: 0,
+            disk_total_written_bytes: 0,
+            status: ProcessStatus::Run,
+            run_time_secs: 0,
+            storage_total_bytes: 0,
+            storage_available_bytes: 0,
+            storage_mount_point: String::new(),
+        }
+    }
+
+    fn test_app() -> App {
+        App::new(
+            Pid::from_u32(1),
+            "test".to_string(),
+            "/test".to_string(),
+            0,
+            0,
+            1,
+            Duration::from_millis(100),
+            sample(),
+        )
+    }
+
+    #[test]
+    fn handle_key_toggles_pause_and_quit() {
+        let mut app = test_app();
+        assert!(!app.paused);
+
+        app.handle_key(KeyCode::Char('p'));
+        assert!(app.paused);
+        app.handle_key(KeyCode::Char('p'));
+        assert!(!app.paused);
+
+        assert!(!app.should_quit);
+        app.handle_key(KeyCode::Char('q'));
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn handle_key_cycles_cpu_view_mode() {
+        let mut app = test_app();
+        assert!(app.cpu_view_mode == CpuViewMode::PercentOfTotal);
+
+        app.handle_key(KeyCode::Char('c'));
+        assert!(app.cpu_view_mode == CpuViewMode::Cores);
+        app.handle_key(KeyCode::Char('c'));
+        assert!(app.cpu_view_mode == CpuViewMode::Relative);
+        app.handle_key(KeyCode::Char('c'));
+        assert!(app.cpu_view_mode == CpuViewMode::PercentOfTotal);
+    }
+
+    #[test]
+    fn handle_key_reset_clears_history_but_not_peaks() {
+        let mut app = test_app();
+        app.update(sample());
+        app.update(sample());
+        assert!(!app.cpu_history.is_empty());
+        assert!(!app.mem_history.is_empty());
+
+        app.cpu_peak = 42.0;
+        app.handle_key(KeyCode::Char('r'));
+
+        assert!(app.cpu_history.is_empty());
+        assert!(app.mem_history.is_empty());
+        assert_eq!(app.cpu_peak, 42.0);
+    }
+}

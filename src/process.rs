@@ -30,3 +30,35 @@ pub fn resolve_target(sys: &System, target: &str) -> LookupResult {
         _ => LookupResult::Ambiguous,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_target_finds_own_pid_by_number() {
+        let mut sys = System::new_all();
+        sys.refresh_all();
+        let own_pid = std::process::id();
+
+        match resolve_target(&sys, &own_pid.to_string()) {
+            LookupResult::Found(pid) => assert_eq!(pid, Pid::from_u32(own_pid)),
+            _ => panic!("expected own process to be found by pid"),
+        }
+    }
+
+    #[test]
+    fn resolve_target_not_found_for_bogus_input() {
+        let mut sys = System::new_all();
+        sys.refresh_all();
+
+        assert!(matches!(
+            resolve_target(&sys, "definitely-not-a-real-process-name"),
+            LookupResult::NotFound
+        ));
+        assert!(matches!(
+            resolve_target(&sys, "999999999"),
+            LookupResult::NotFound
+        ));
+    }
+}
