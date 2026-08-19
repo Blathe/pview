@@ -186,7 +186,14 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
             format!("{:.2} cores", app.cpu_current / 100.0),
             format!("peak {:.2} cores", app.cpu_peak / 100.0),
         ),
+        CpuViewMode::PeakUsage => (
+            "Peak Usage",
+            format!("{:.1}%", app.cpu_current),
+            format!("peak {:.1}%", app.cpu_peak),
+        ),
     };
+
+    let peak_in_window_pct = cpu_history.iter().copied().max().unwrap_or(0) as f64;
 
     let (cpu_y_max, cpu_axis_labels) = match app.cpu_view_mode {
         CpuViewMode::PercentOfTotal => (100.0, ("0%".to_string(), "100%".to_string())),
@@ -195,12 +202,20 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
             // the next whole core, minimum 1) instead of a fixed
             // 0-`core_count` scale, so modest usage on a many-core machine
             // doesn't render as a flat line hugging the bottom.
-            let peak_in_window_cores =
-                cpu_history.iter().copied().max().unwrap_or(0) as f64 / 100.0;
-            let axis_max_cores = peak_in_window_cores.ceil().max(1.0);
+            let axis_max_cores = (peak_in_window_pct / 100.0).ceil().max(1.0);
             (
                 axis_max_cores * 100.0,
                 ("0".to_string(), format!("{axis_max_cores:.0}")),
+            )
+        }
+        CpuViewMode::PeakUsage => {
+            // Axis maxes out exactly at the visible window's peak percent
+            // (minimum 1%), so e.g. a 10%-peak window fills 0-10% instead of
+            // 0-100%, making small fluctuations visible.
+            let axis_max_pct = peak_in_window_pct.max(1.0);
+            (
+                axis_max_pct,
+                ("0%".to_string(), format!("{axis_max_pct:.0}%")),
             )
         }
     };

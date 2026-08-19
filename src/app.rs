@@ -12,11 +12,27 @@ use crate::monitor::Sample;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum CpuViewMode {
     /// Percent of one core (sysinfo's raw `cpu_usage()` scale) — can exceed
-    /// 100% on multi-core machines, e.g. 250% = 2.5 cores busy.
+    /// 100% on multi-core machines, e.g. 250% = 2.5 cores busy. Graph axis
+    /// is a fixed 0-100%.
     PercentOfTotal,
     /// The same underlying value rescaled/labeled in terms of cores, e.g.
-    /// 2.5 cores instead of 250%.
+    /// 2.5 cores instead of 250%. Graph axis auto-fits to the visible
+    /// window's peak, rounded up to the next whole core.
     Cores,
+    /// Same value/units as `PercentOfTotal`, but the graph axis auto-fits
+    /// to the visible window's peak percent instead of a fixed 0-100%, so
+    /// small fluctuations are still readable when usage is low.
+    PeakUsage,
+}
+
+impl CpuViewMode {
+    pub fn next(self) -> Self {
+        match self {
+            CpuViewMode::PercentOfTotal => CpuViewMode::Cores,
+            CpuViewMode::Cores => CpuViewMode::PeakUsage,
+            CpuViewMode::PeakUsage => CpuViewMode::PercentOfTotal,
+        }
+    }
 }
 
 pub struct App {
@@ -219,10 +235,7 @@ impl App {
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Char('p') => self.paused = !self.paused,
             KeyCode::Char('c') => {
-                self.cpu_view_mode = match self.cpu_view_mode {
-                    CpuViewMode::PercentOfTotal => CpuViewMode::Cores,
-                    CpuViewMode::Cores => CpuViewMode::PercentOfTotal,
-                };
+                self.cpu_view_mode = self.cpu_view_mode.next();
             }
             KeyCode::Char('r') => {
                 self.cpu_history.clear();
