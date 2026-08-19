@@ -23,4 +23,4 @@ pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// visible window's peak (e.g. 1.5 = axis tops out 50% above the peak),
 /// so a current reading sitting at or near the recent peak still renders
 /// with visible room above it instead of hugging the top of the chart.
-pub const CPU_RELATIVE_AXIS_HEADROOM: f64 = 1.5;
+pub const CPU_RELATIVE_AXIS_HEADROOM: f64 = 1.1;

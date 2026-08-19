@@ -4,7 +4,7 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph, Sparkline};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Sparkline};
 use sysinfo::ProcessStatus;
 
 use crate::app::{App, CpuViewMode};
@@ -28,8 +28,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
             // the gauges fixed-size and grows only the sparkline into the
             // extra room (see its `Constraint::Min(1)` plot-area row).
             Constraint::Min(12),
-            Constraint::Length(11),
             Constraint::Length(7),
+            Constraint::Length(3),
             Constraint::Length(3),
         ])
         .split(area);
@@ -99,8 +99,7 @@ fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
             Style::default()
                 .fg(TITLE_COLOR)
                 .add_modifier(Modifier::BOLD),
-        )
-        .padding(Padding::new(1, 1, 0, 0));
+        );
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -373,8 +372,7 @@ fn draw_stat_panel(
             Style::default()
                 .fg(TITLE_COLOR)
                 .add_modifier(Modifier::BOLD),
-        )
-        .padding(Padding::uniform(1));
+        );
     if let Some(extra) = title_extra {
         block = block.title_top(
             Line::from(Span::styled(extra, Style::default().fg(Color::DarkGray))).right_aligned(),
@@ -516,8 +514,7 @@ fn draw_disk_panel(frame: &mut Frame, area: Rect, app: &App) {
             Style::default()
                 .fg(TITLE_COLOR)
                 .add_modifier(Modifier::BOLD),
-        )
-        .padding(Padding::uniform(1));
+        );
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -601,18 +598,13 @@ fn draw_storage_panel(frame: &mut Frame, area: Rect, app: &App) {
             Style::default()
                 .fg(TITLE_COLOR)
                 .add_modifier(Modifier::BOLD),
-        )
-        .padding(Padding::uniform(1));
+        );
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
+        .constraints([Constraint::Length(1), Constraint::Length(1)])
         .split(inner);
 
     let total_mb = app.storage_total_mb.max(1);
@@ -621,10 +613,12 @@ fn draw_storage_panel(frame: &mut Frame, area: Rect, app: &App) {
 
     let left = app.storage_mount_point.clone();
     let right = format!(
-        "{} / {}",
+        "{} / {} (Free: {})",
         format_mb_as_gb(app.storage_used_mb),
-        format_mb_as_gb(app.storage_total_mb)
+        format_mb_as_gb(app.storage_total_mb),
+        format_mb_as_gb(free_mb)
     );
+
     let gap = rows[0]
         .width
         .saturating_sub(left.len() as u16 + right.len() as u16);
@@ -641,15 +635,6 @@ fn draw_storage_panel(frame: &mut Frame, area: Rect, app: &App) {
         ratio,
         STORAGE_COLOR,
         Some(format!("{:.1}%", ratio * 100.0)),
-    );
-
-    let summary = format!("Free {}", format_mb_as_gb(free_mb));
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            summary,
-            Style::default().fg(Color::DarkGray),
-        ))),
-        rows[2],
     );
 }
 
