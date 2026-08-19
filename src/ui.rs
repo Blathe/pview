@@ -22,12 +22,14 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .constraints([
             Constraint::Length(1),
             Constraint::Length(5),
-            // At least its original fixed height, but absorbs any leftover
-            // vertical space instead of leaving it as dead space below the
-            // storage panel — `draw_stat_panel`'s own internal layout keeps
-            // the gauges fixed-size and grows only the sparkline into the
-            // extra room (see its `Constraint::Min(1)` plot-area row).
-            Constraint::Min(12),
+            // The only flexible row: absorbs all leftover vertical space
+            // instead of leaving it as dead space below the storage panel.
+            // `Fill` (rather than `Min`) keeps that space from leaking into
+            // the other, fixed-height rows above — `draw_stat_panel`'s own
+            // internal layout keeps the gauges fixed-size and grows only the
+            // sparkline into the extra room (see its `Constraint::Min(1)`
+            // plot-area row).
+            Constraint::Fill(12),
             Constraint::Length(5),
             Constraint::Length(3),
             Constraint::Length(3),
