@@ -18,3 +18,9 @@ pub const MEM_TREND_MAX_SAMPLES: usize = 60;
 pub const BYTES_PER_MB: u64 = 1_048_576;
 
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// How much headroom the CPU panel's "Relative" view gives itself above the
+/// visible window's peak (e.g. 1.5 = axis tops out 50% above the peak),
+/// so a current reading sitting at or near the recent peak still renders
+/// with visible room above it instead of hugging the top of the chart.
+pub const CPU_RELATIVE_AXIS_HEADROOM: f64 = 1.5;

@@ -19,18 +19,20 @@ pub enum CpuViewMode {
     /// 2.5 cores instead of 250%. Graph axis auto-fits to the visible
     /// window's peak, rounded up to the next whole core.
     Cores,
-    /// Same value/units as `PercentOfTotal`, but the graph axis auto-fits
-    /// to the visible window's peak percent instead of a fixed 0-100%, so
-    /// small fluctuations are still readable when usage is low.
-    PeakUsage,
+    /// Same value/units as `PercentOfTotal`, but the graph axis tops out at
+    /// the visible window's peak percent plus headroom
+    /// (`CPU_RELATIVE_AXIS_HEADROOM`) instead of a fixed 0-100%, so the
+    /// current reading is shown relative to recent history instead of
+    /// hugging the top of the chart whenever it's close to the peak.
+    Relative,
 }
 
 impl CpuViewMode {
     pub fn next(self) -> Self {
         match self {
             CpuViewMode::PercentOfTotal => CpuViewMode::Cores,
-            CpuViewMode::Cores => CpuViewMode::PeakUsage,
-            CpuViewMode::PeakUsage => CpuViewMode::PercentOfTotal,
+            CpuViewMode::Cores => CpuViewMode::Relative,
+            CpuViewMode::Relative => CpuViewMode::PercentOfTotal,
         }
     }
 }
