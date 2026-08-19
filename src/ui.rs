@@ -177,12 +177,12 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
     // The mode only changes the value/peak text and the sparkline's scale.
     let (cpu_mode_label, cpu_value, cpu_peak_label) = match app.cpu_view_mode {
         CpuViewMode::PercentOfTotal => (
-            "% of 1 core",
+            "System Usage",
             format!("{:.1}%", app.cpu_current),
             format!("peak {:.1}%", app.cpu_peak),
         ),
         CpuViewMode::Cores => (
-            "cores",
+            "Core Usage",
             format!("{:.2} cores", app.cpu_current / 100.0),
             format!("peak {:.2} cores", app.cpu_peak / 100.0),
         ),
