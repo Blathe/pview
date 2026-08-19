@@ -32,10 +32,33 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     draw_slim_header(frame, rows[0]);
     draw_status_bar(frame, rows[1], app);
-    draw_cpu_mem_row(frame, rows[2], app);
-    draw_disk_panel(frame, rows[3], app);
-    draw_storage_panel(frame, rows[4], app);
+    draw_cpu_mem_row(frame, overlap_top(rows[2], 1), app);
+    draw_disk_panel(frame, overlap_top(rows[3], 1), app);
+    draw_storage_panel(frame, overlap_top(rows[4], 1), app);
     draw_footer(frame, rows[6], app);
+}
+
+/// Grows `rect` upward by `by` rows (keeping its bottom edge fixed), so a
+/// block drawn into it paints its top border directly over the previous
+/// panel's bottom border row instead of leaving two separate border lines
+/// back to back — an experiment in collapsing adjacent panel borders into a
+/// single shared line.
+fn overlap_top(rect: Rect, by: u16) -> Rect {
+    Rect {
+        y: rect.y.saturating_sub(by),
+        height: rect.height + by,
+        ..rect
+    }
+}
+
+/// Same idea as `overlap_top`, but for side-by-side panels sharing a
+/// vertical border.
+fn overlap_left(rect: Rect, by: u16) -> Rect {
+    Rect {
+        x: rect.x.saturating_sub(by),
+        width: rect.width + by,
+        ..rect
+    }
 }
 
 pub fn draw_slim_header(frame: &mut Frame, area: Rect) {
@@ -66,7 +89,7 @@ pub fn draw_slim_header(frame: &mut Frame, area: Rect) {
 fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_type(BorderType::Plain)
         .title("PROCESS")
         .title_style(
             Style::default()
@@ -269,7 +292,7 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
 
     draw_stat_panel(
         frame,
-        cols[1],
+        overlap_left(cols[1], 1),
         "MEMORY",
         mem_trend_label,
         Some(format!(
@@ -340,7 +363,7 @@ fn draw_stat_panel(
 ) {
     let mut block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_type(BorderType::Plain)
         .title_top(Line::from(title).left_aligned())
         .title_style(
             Style::default()
@@ -483,7 +506,7 @@ fn resample_to_width(data: &[u64], width: usize, capacity: usize) -> Vec<u64> {
 fn draw_disk_panel(frame: &mut Frame, area: Rect, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_type(BorderType::Plain)
         .title("DISK I/O")
         .title_style(
             Style::default()
@@ -568,7 +591,7 @@ fn draw_disk_row(
 fn draw_storage_panel(frame: &mut Frame, area: Rect, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_type(BorderType::Plain)
         .title("STORAGE")
         .title_style(
             Style::default()
@@ -699,7 +722,7 @@ fn render_kv_styled(frame: &mut Frame, area: Rect, key: &str, value: String, val
 fn draw_footer(frame: &mut Frame, area: Rect, _app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded);
+        .border_type(BorderType::Plain);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
