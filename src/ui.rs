@@ -174,6 +174,8 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
     let cpu_bar_label = format!("{:.1}%", cpu_total_ratio * 100.0);
     let cpu_badge = health_badge((cpu_total_ratio * 100.0) as f64);
 
+    let peak_in_window_pct = cpu_history.iter().copied().max().unwrap_or(0) as f64;
+
     // The mode only changes the value/peak text and the sparkline's scale.
     let (cpu_mode_label, cpu_value, cpu_peak_label) = match app.cpu_view_mode {
         CpuViewMode::PercentOfTotal => (
@@ -189,11 +191,13 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
         CpuViewMode::PeakUsage => (
             "Peak Usage",
             format!("{:.1}%", app.cpu_current),
-            format!("peak {:.1}%", app.cpu_peak),
+            // The windowed peak driving this mode's axis, not the all-time
+            // `cpu_peak` shown by the other two modes — those are frequently
+            // different numbers, so this is labeled distinctly to avoid
+            // implying it's the same reading.
+            format!("60s peak {peak_in_window_pct:.1}%"),
         ),
     };
-
-    let peak_in_window_pct = cpu_history.iter().copied().max().unwrap_or(0) as f64;
 
     let (cpu_y_max, cpu_axis_labels) = match app.cpu_view_mode {
         CpuViewMode::PercentOfTotal => (100.0, ("0%".to_string(), "100%".to_string())),
