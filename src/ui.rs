@@ -47,7 +47,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
 /// panel's bottom border row instead of leaving two separate border lines
 /// back to back — an experiment in collapsing adjacent panel borders into a
 /// single shared line.
-fn overlap_top(rect: Rect, by: u16) -> Rect {
+pub(crate) fn overlap_top(rect: Rect, by: u16) -> Rect {
     Rect {
         y: rect.y.saturating_sub(by),
         height: rect.height + by,

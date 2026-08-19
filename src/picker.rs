@@ -9,13 +9,13 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, BorderType, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
+    Block, BorderType, Borders, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
 };
 use ratatui::{Frame, Terminal};
 use sysinfo::{Pid, ProcessesToUpdate, System};
 
 use crate::config::BYTES_PER_MB;
-use crate::ui::{TITLE_COLOR, draw_slim_header};
+use crate::ui::{TITLE_COLOR, draw_slim_header, overlap_top};
 
 const SELECTED_BG: Color = Color::Rgb(30, 41, 59);
 const ACCENT_COLOR: Color = TITLE_COLOR;
@@ -232,7 +232,7 @@ fn draw(frame: &mut Frame, state: &PickerState) {
 
     draw_slim_header(frame, rows[0]);
     draw_search_box(frame, rows[1], state);
-    draw_results(frame, rows[2], state);
+    draw_results(frame, overlap_top(rows[2], 1), state);
     draw_footer(frame, rows[3]);
 }
 
@@ -249,7 +249,7 @@ fn draw_search_box(frame: &mut Frame, area: Rect, state: &PickerState) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_type(BorderType::Plain)
         .title_top(Line::from("SEARCH").left_aligned())
         .title_style(
             Style::default()
@@ -280,7 +280,7 @@ fn draw_search_box(frame: &mut Frame, area: Rect, state: &PickerState) {
 fn draw_results(frame: &mut Frame, area: Rect, state: &PickerState) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_type(BorderType::Plain)
         .title_top(Line::from("PROCESSES").left_aligned())
         .title_style(
             Style::default()
@@ -293,7 +293,8 @@ fn draw_results(frame: &mut Frame, area: Rect, state: &PickerState) {
                 Style::default().fg(Color::DarkGray),
             ))
             .right_aligned(),
-        );
+        )
+        .padding(Padding::new(0, 1, 0, 0));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -557,7 +558,7 @@ fn format_mem(bytes: u64) -> String {
 fn draw_footer(frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded);
+        .border_type(BorderType::Plain);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
