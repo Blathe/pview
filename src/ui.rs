@@ -175,6 +175,7 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
     let cpu_badge = health_badge((cpu_total_ratio * 100.0) as f64);
 
     let peak_in_window_pct = cpu_history.iter().copied().max().unwrap_or(0) as f64;
+    let min_in_window_pct = cpu_history.iter().copied().min().unwrap_or(0) as f64;
 
     // The mode only changes the value/peak text and the sparkline's scale.
     let (cpu_mode_label, cpu_value, cpu_peak_label) = match app.cpu_view_mode {
@@ -199,8 +200,8 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
         ),
     };
 
-    let (cpu_y_max, cpu_axis_labels) = match app.cpu_view_mode {
-        CpuViewMode::PercentOfTotal => (100.0, ("0%".to_string(), "100%".to_string())),
+    let (cpu_y_max, cpu_axis_labels, cpu_plot_history) = match app.cpu_view_mode {
+        CpuViewMode::PercentOfTotal => (100.0, ("0%".to_string(), "100%".to_string()), cpu_history),
         CpuViewMode::Cores => {
             // Auto-fits the axis to the visible window's peak (rounded up to
             // the next whole core, minimum 1) instead of a fixed
@@ -210,16 +211,29 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
             (
                 axis_max_cores * 100.0,
                 ("0".to_string(), format!("{axis_max_cores:.0}")),
+                cpu_history,
             )
         }
         CpuViewMode::PeakUsage => {
-            // Axis maxes out exactly at the visible window's peak percent
-            // (minimum 1%), so e.g. a 10%-peak window fills 0-10% instead of
-            // 0-100%, making small fluctuations visible.
-            let axis_max_pct = peak_in_window_pct.max(1.0);
+            // Auto-fits BOTH ends of the axis to the visible window's actual
+            // range instead of a fixed 0 floor, so a steady-but-nonzero
+            // workload (current close to its own recent peak) still shows
+            // its real fluctuation instead of just hugging the top of a
+            // 0-to-peak axis. The plotted data is shifted down by the
+            // window's min so it renders against that same [0, range] scale
+            // (ratatui's Sparkline always baselines at 0).
+            let range_pct = (peak_in_window_pct - min_in_window_pct).max(1.0);
+            let shifted: Vec<u64> = cpu_history
+                .iter()
+                .map(|&v| v.saturating_sub(min_in_window_pct as u64))
+                .collect();
             (
-                axis_max_pct,
-                ("0%".to_string(), format!("{axis_max_pct:.0}%")),
+                range_pct,
+                (
+                    format!("{min_in_window_pct:.0}%"),
+                    format!("{peak_in_window_pct:.0}%"),
+                ),
+                shifted,
             )
         }
     };
@@ -230,7 +244,7 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
         "CPU",
         Some(cpu_mode_label.to_string()),
         Some(cpu_value),
-        cpu_history,
+        cpu_plot_history,
         cpu_y_max,
         Some(cpu_axis_labels),
         time_labels.clone(),
