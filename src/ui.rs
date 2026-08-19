@@ -28,7 +28,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
             // the gauges fixed-size and grows only the sparkline into the
             // extra room (see its `Constraint::Min(1)` plot-area row).
             Constraint::Min(12),
-            Constraint::Length(7),
+            Constraint::Length(5),
             Constraint::Length(3),
             Constraint::Length(3),
         ])
@@ -525,15 +525,12 @@ fn draw_disk_panel(frame: &mut Frame, area: Rect, app: &App) {
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
         ])
         .split(inner);
 
     draw_disk_row(
         frame,
-        [rows[0], rows[1], rows[2]],
+        [rows[0], rows[1]],
         "Read",
         app.disk_read_rate_mb_s,
         app.disk_read_rate_peak_mb_s,
@@ -543,7 +540,7 @@ fn draw_disk_panel(frame: &mut Frame, area: Rect, app: &App) {
 
     draw_disk_row(
         frame,
-        [rows[4], rows[5], rows[6]],
+        [rows[2], rows[3]],
         "Write",
         app.disk_write_rate_mb_s,
         app.disk_write_rate_peak_mb_s,
@@ -554,21 +551,21 @@ fn draw_disk_panel(frame: &mut Frame, area: Rect, app: &App) {
 
 fn draw_disk_row(
     frame: &mut Frame,
-    rows: [Rect; 3],
+    rows: [Rect; 2],
     label: &str,
     rate: f32,
     peak_rate: f32,
     total_mb: f64,
     color: Color,
 ) {
-    let rate_text = format!("{rate:.2} MB/s");
+    let summary = format!("Max {peak_rate:.2} MB/s    Total {total_mb:.2} MB");
     let gap = rows[0]
         .width
-        .saturating_sub(label.len() as u16 + rate_text.len() as u16);
+        .saturating_sub(label.len() as u16 + summary.len() as u16);
     let line = Line::from(vec![
         Span::raw(label.to_string()),
         Span::raw(" ".repeat(gap as usize)),
-        Span::raw(rate_text),
+        Span::styled(summary, Style::default().fg(Color::DarkGray)),
     ]);
     frame.render_widget(Paragraph::new(line), rows[0]);
 
@@ -577,15 +574,12 @@ fn draw_disk_row(
     } else {
         0.0
     };
-    draw_bar(frame, rows[1], ratio, color, None);
-
-    let summary = format!("Max {peak_rate:.2} MB/s    Total {total_mb:.2} MB");
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            summary,
-            Style::default().fg(Color::DarkGray),
-        ))),
-        rows[2],
+    draw_bar(
+        frame,
+        rows[1],
+        ratio,
+        color,
+        Some(format!("{rate:.2} MB/s")),
     );
 }
 
