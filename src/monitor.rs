@@ -38,8 +38,14 @@ impl Monitor {
     }
 
     pub fn sample(&mut self) -> Result<Sample, MonitorError> {
-        self.sys
-            .refresh_processes(ProcessesToUpdate::Some(&[self.pid]), true);
+        // Must be `All`, not `Some(&[self.pid])`: on Linux, sysinfo only
+        // recomputes `cpu_usage()` from the raw process-time counters when
+        // refreshing all processes (see `SystemInner::update_procs_cpu` in
+        // sysinfo's unix/linux backend, gated on `ProcessesToUpdate::All`).
+        // A single-PID refresh still advances the raw counters but never
+        // turns them into a new percentage, so `cpu_usage()` would silently
+        // freeze at whatever it read on the last full refresh.
+        self.sys.refresh_processes(ProcessesToUpdate::All, true);
 
         let process = self
             .sys
