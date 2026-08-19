@@ -4,7 +4,7 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph, Sparkline};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Sparkline};
 use sysinfo::ProcessStatus;
 
 use crate::app::{App, CpuViewMode};
@@ -22,14 +22,16 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .constraints([
             Constraint::Length(1),
             Constraint::Length(5),
-            // At least its original fixed height, but absorbs any leftover
-            // vertical space instead of leaving it as dead space below the
-            // storage panel — `draw_stat_panel`'s own internal layout keeps
-            // the gauges fixed-size and grows only the sparkline into the
-            // extra room (see its `Constraint::Min(1)` plot-area row).
-            Constraint::Min(12),
-            Constraint::Length(11),
-            Constraint::Length(7),
+            // The only flexible row: absorbs all leftover vertical space
+            // instead of leaving it as dead space below the storage panel.
+            // `Fill` (rather than `Min`) keeps that space from leaking into
+            // the other, fixed-height rows above — `draw_stat_panel`'s own
+            // internal layout keeps the gauges fixed-size and grows only the
+            // sparkline into the extra room (see its `Constraint::Min(1)`
+            // plot-area row).
+            Constraint::Fill(12),
+            Constraint::Length(5),
+            Constraint::Length(3),
             Constraint::Length(3),
         ])
         .split(area);
@@ -99,8 +101,7 @@ fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
             Style::default()
                 .fg(TITLE_COLOR)
                 .add_modifier(Modifier::BOLD),
-        )
-        .padding(Padding::new(1, 1, 0, 0));
+        );
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -373,8 +374,7 @@ fn draw_stat_panel(
             Style::default()
                 .fg(TITLE_COLOR)
                 .add_modifier(Modifier::BOLD),
-        )
-        .padding(Padding::uniform(1));
+        );
     if let Some(extra) = title_extra {
         block = block.title_top(
             Line::from(Span::styled(extra, Style::default().fg(Color::DarkGray))).right_aligned(),
@@ -516,8 +516,7 @@ fn draw_disk_panel(frame: &mut Frame, area: Rect, app: &App) {
             Style::default()
                 .fg(TITLE_COLOR)
                 .add_modifier(Modifier::BOLD),
-        )
-        .padding(Padding::uniform(1));
+        );
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -528,15 +527,12 @@ fn draw_disk_panel(frame: &mut Frame, area: Rect, app: &App) {
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
         ])
         .split(inner);
 
     draw_disk_row(
         frame,
-        [rows[0], rows[1], rows[2]],
+        [rows[0], rows[1]],
         "Read",
         app.disk_read_rate_mb_s,
         app.disk_read_rate_peak_mb_s,
@@ -546,7 +542,7 @@ fn draw_disk_panel(frame: &mut Frame, area: Rect, app: &App) {
 
     draw_disk_row(
         frame,
-        [rows[4], rows[5], rows[6]],
+        [rows[2], rows[3]],
         "Write",
         app.disk_write_rate_mb_s,
         app.disk_write_rate_peak_mb_s,
@@ -557,21 +553,21 @@ fn draw_disk_panel(frame: &mut Frame, area: Rect, app: &App) {
 
 fn draw_disk_row(
     frame: &mut Frame,
-    rows: [Rect; 3],
+    rows: [Rect; 2],
     label: &str,
     rate: f32,
     peak_rate: f32,
     total_mb: f64,
     color: Color,
 ) {
-    let rate_text = format!("{rate:.2} MB/s");
+    let summary = format!("Max {peak_rate:.2} MB/s    Total {total_mb:.2} MB");
     let gap = rows[0]
         .width
-        .saturating_sub(label.len() as u16 + rate_text.len() as u16);
+        .saturating_sub(label.len() as u16 + summary.len() as u16);
     let line = Line::from(vec![
         Span::raw(label.to_string()),
         Span::raw(" ".repeat(gap as usize)),
-        Span::raw(rate_text),
+        Span::styled(summary, Style::default().fg(Color::DarkGray)),
     ]);
     frame.render_widget(Paragraph::new(line), rows[0]);
 
@@ -580,15 +576,12 @@ fn draw_disk_row(
     } else {
         0.0
     };
-    draw_bar(frame, rows[1], ratio, color, None);
-
-    let summary = format!("Max {peak_rate:.2} MB/s    Total {total_mb:.2} MB");
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            summary,
-            Style::default().fg(Color::DarkGray),
-        ))),
-        rows[2],
+    draw_bar(
+        frame,
+        rows[1],
+        ratio,
+        color,
+        Some(format!("{rate:.2} MB/s")),
     );
 }
 
@@ -601,18 +594,13 @@ fn draw_storage_panel(frame: &mut Frame, area: Rect, app: &App) {
             Style::default()
                 .fg(TITLE_COLOR)
                 .add_modifier(Modifier::BOLD),
-        )
-        .padding(Padding::uniform(1));
+        );
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
+        .constraints([Constraint::Length(1), Constraint::Length(1)])
         .split(inner);
 
     let total_mb = app.storage_total_mb.max(1);
@@ -621,10 +609,12 @@ fn draw_storage_panel(frame: &mut Frame, area: Rect, app: &App) {
 
     let left = app.storage_mount_point.clone();
     let right = format!(
-        "{} / {}",
+        "{} / {} (Free: {})",
         format_mb_as_gb(app.storage_used_mb),
-        format_mb_as_gb(app.storage_total_mb)
+        format_mb_as_gb(app.storage_total_mb),
+        format_mb_as_gb(free_mb)
     );
+
     let gap = rows[0]
         .width
         .saturating_sub(left.len() as u16 + right.len() as u16);
@@ -641,15 +631,6 @@ fn draw_storage_panel(frame: &mut Frame, area: Rect, app: &App) {
         ratio,
         STORAGE_COLOR,
         Some(format!("{:.1}%", ratio * 100.0)),
-    );
-
-    let summary = format!("Free {}", format_mb_as_gb(free_mb));
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            summary,
-            Style::default().fg(Color::DarkGray),
-        ))),
-        rows[2],
     );
 }
 
