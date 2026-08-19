@@ -40,7 +40,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
 pub fn draw_slim_header(frame: &mut Frame, area: Rect) {
     let line = Line::from(vec![
         Span::styled(
-            "[pview ● ",
+            "[pview v",
             Style::default()
                 .fg(Color::LightBlue)
                 .add_modifier(Modifier::BOLD),
