@@ -778,3 +778,42 @@ fn format_unix_secs(unix_secs: u64) -> String {
     let s = secs_of_day % 60;
     format!("{h:02}:{m:02}:{s:02} UTC")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_duration_formats_hms() {
+        assert_eq!(format_duration(0), "00:00:00");
+        assert_eq!(format_duration(59), "00:00:59");
+        assert_eq!(format_duration(3661), "01:01:01");
+    }
+
+    #[test]
+    fn truncate_exe_path_keeps_short_paths_unchanged() {
+        assert_eq!(truncate_exe_path(r"C:\a\b.exe"), r"C:\a\b.exe");
+    }
+
+    #[test]
+    fn truncate_exe_path_truncates_long_paths_to_last_three_segments() {
+        assert_eq!(
+            truncate_exe_path(r"C:\Program Files\App\bin\app.exe"),
+            r"...\App\bin\app.exe"
+        );
+    }
+
+    #[test]
+    fn format_mb_as_gb_rounds_near_whole_numbers() {
+        assert_eq!(format_mb_as_gb(2048), "2 GB");
+        assert_eq!(format_mb_as_gb(1500), "1.5 GB");
+    }
+
+    #[test]
+    fn health_badge_thresholds() {
+        assert_eq!(health_badge(89.9).0, "HIGH");
+        assert_eq!(health_badge(90.0).0, "CRIT");
+        assert_eq!(health_badge(69.9).0, "OK");
+        assert_eq!(health_badge(70.0).0, "HIGH");
+    }
+}

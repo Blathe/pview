@@ -578,3 +578,58 @@ fn draw_footer(frame: &mut Frame, area: Rect) {
     ]);
     frame.render_widget(Paragraph::new(line), inner);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(pid: u32, name: &str, parent: Option<u32>) -> PickerEntry {
+        PickerEntry {
+            pid: Pid::from_u32(pid),
+            name: name.to_string(),
+            parent: parent.map(Pid::from_u32),
+            is_group_root: false,
+            cpu_usage: 0.0,
+            memory_bytes: 0,
+        }
+    }
+
+    #[test]
+    fn mark_group_roots_flags_only_the_non_sibling_parented_instance() {
+        // chrome(1) is the top-level instance (parented by explorer, pid 99,
+        // which isn't itself a chrome.exe); chrome(2) and chrome(3) are its
+        // renderer children, parented by chrome instances in the same group.
+        let mut entries = vec![
+            entry(1, "chrome.exe", Some(99)),
+            entry(2, "chrome.exe", Some(1)),
+            entry(3, "chrome.exe", Some(2)),
+            entry(4, "firefox.exe", None),
+        ];
+
+        mark_group_roots(&mut entries);
+
+        assert!(entries[0].is_group_root, "top-level chrome should be root");
+        assert!(!entries[1].is_group_root, "child chrome should not be root");
+        assert!(
+            !entries[2].is_group_root,
+            "grandchild chrome should not be root"
+        );
+        assert!(
+            !entries[3].is_group_root,
+            "sole instance has no group, so it's never flagged"
+        );
+    }
+
+    #[test]
+    fn format_mem_switches_units_at_1024mb() {
+        assert_eq!(format_mem(512 * BYTES_PER_MB), "512 MB");
+        assert_eq!(format_mem(2048 * BYTES_PER_MB), "2.0 GB");
+    }
+
+    #[test]
+    fn cpu_color_thresholds() {
+        assert_eq!(cpu_color(1.9), Color::Green);
+        assert_eq!(cpu_color(2.0), Color::Yellow);
+        assert_eq!(cpu_color(20.0), Color::Red);
+    }
+}
