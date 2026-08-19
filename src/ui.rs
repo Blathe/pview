@@ -5,6 +5,7 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph, Sparkline};
+use sysinfo::ProcessStatus;
 
 use crate::app::{App, CpuViewMode};
 use crate::config::{APP_VERSION, BYTES_PER_MB, CPU_RELATIVE_AXIS_HEADROOM, HISTORY_LEN};
@@ -132,7 +133,12 @@ fn status_display(app: &App) -> (String, Color) {
     if app.paused {
         ("PAUSED".to_string(), Color::Yellow)
     } else {
-        (format!("{:?}", app.status), Color::Green)
+        let status_text = match app.status {
+            ProcessStatus::Run => "Running".to_string(),
+            ProcessStatus::Sleep => "Sleeping".to_string(),
+            other => format!("{other:?}"),
+        };
+        (status_text, Color::Green)
     }
 }
 
