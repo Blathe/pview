@@ -22,10 +22,14 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .constraints([
             Constraint::Length(1),
             Constraint::Length(5),
-            Constraint::Length(12),
+            // At least its original fixed height, but absorbs any leftover
+            // vertical space instead of leaving it as dead space below the
+            // storage panel — `draw_stat_panel`'s own internal layout keeps
+            // the gauges fixed-size and grows only the sparkline into the
+            // extra room (see its `Constraint::Min(1)` plot-area row).
+            Constraint::Min(12),
             Constraint::Length(11),
             Constraint::Length(7),
-            Constraint::Fill(1),
             Constraint::Length(3),
         ])
         .split(area);
@@ -35,7 +39,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     draw_cpu_mem_row(frame, overlap_top(rows[2], 1), app);
     draw_disk_panel(frame, overlap_top(rows[3], 1), app);
     draw_storage_panel(frame, overlap_top(rows[4], 1), app);
-    draw_footer(frame, rows[6], app);
+    draw_footer(frame, rows[5], app);
 }
 
 /// Grows `rect` upward by `by` rows (keeping its bottom edge fixed), so a
