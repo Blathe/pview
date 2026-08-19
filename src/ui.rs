@@ -163,49 +163,53 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
         .map(|v| v.round().max(0.0) as u64)
         .collect();
 
-    // The core count is fixed for the process's lifetime, so this only
-    // affects axis scale/labels/formatting below, not what's stored in
-    // `cpu_history` (still raw percent-of-one-core either way).
     let core_count = app.core_count.max(1);
-    let (
-        cpu_y_max,
-        cpu_axis_labels,
-        cpu_value,
-        cpu_peak_label,
-        cpu_badge,
-        cpu_ratio,
-        cpu_bar_label,
-    ) = match app.cpu_view_mode {
+
+    // The usage gauge and health badge always read as a percentage of total
+    // system CPU capacity, regardless of `cpu_view_mode` below, so the bar
+    // stays a stable, at-a-glance "how much of the machine" reading instead
+    // of changing meaning (or getting stuck maxed-out past 1 core's worth of
+    // usage) when the mode is toggled.
+    let cpu_total_ratio = app.cpu_current / 100.0 / core_count as f32;
+    let cpu_bar_label = format!("{:.1}%", cpu_total_ratio * 100.0);
+    let cpu_badge = health_badge((cpu_total_ratio * 100.0) as f64);
+
+    // The mode only changes the value/peak text and the sparkline's scale.
+    let (cpu_mode_label, cpu_value, cpu_peak_label) = match app.cpu_view_mode {
         CpuViewMode::PercentOfTotal => (
-            100.0,
-            ("0%".to_string(), "100%".to_string()),
+            "% of 1 core",
             format!("{:.1}%", app.cpu_current),
             format!("peak {:.1}%", app.cpu_peak),
-            health_badge(app.cpu_current as f64),
-            app.cpu_current / 100.0,
-            format!("{:.1}%", app.cpu_current),
         ),
         CpuViewMode::Cores => (
-            core_count as f64 * 100.0,
-            ("0".to_string(), format!("{core_count}")),
+            "cores",
             format!("{:.2} cores", app.cpu_current / 100.0),
             format!("peak {:.2} cores", app.cpu_peak / 100.0),
-            // Scaled to fraction-of-total-capacity so a busy multi-core
-            // process isn't always CRIT regardless of headroom.
-            health_badge((app.cpu_current / 100.0 / core_count as f32 * 100.0) as f64),
-            app.cpu_current / 100.0 / core_count as f32,
-            format!("{:.2} cores", app.cpu_current / 100.0),
         ),
     };
 
-    // The sparkline shares the same fixed scale as the usage bar/header, so
-    // the baseline is stable and the bar's height is a direct read of actual
-    // usage instead of shifting as the window's peak changes.
+    let (cpu_y_max, cpu_axis_labels) = match app.cpu_view_mode {
+        CpuViewMode::PercentOfTotal => (100.0, ("0%".to_string(), "100%".to_string())),
+        CpuViewMode::Cores => {
+            // Auto-fits the axis to the visible window's peak (rounded up to
+            // the next whole core, minimum 1) instead of a fixed
+            // 0-`core_count` scale, so modest usage on a many-core machine
+            // doesn't render as a flat line hugging the bottom.
+            let peak_in_window_cores =
+                cpu_history.iter().copied().max().unwrap_or(0) as f64 / 100.0;
+            let axis_max_cores = peak_in_window_cores.ceil().max(1.0);
+            (
+                axis_max_cores * 100.0,
+                ("0".to_string(), format!("{axis_max_cores:.0}")),
+            )
+        }
+    };
+
     draw_stat_panel(
         frame,
         cols[0],
         "CPU",
-        None,
+        Some(cpu_mode_label.to_string()),
         Some(cpu_value),
         cpu_history,
         cpu_y_max,
@@ -213,7 +217,7 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
         time_labels.clone(),
         cpu_peak_label,
         cpu_badge,
-        cpu_ratio,
+        cpu_total_ratio,
         cpu_bar_label,
         CPU_COLOR,
     );
