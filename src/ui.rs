@@ -197,16 +197,14 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
         .map(|v| v.round().max(0.0) as u64)
         .collect();
 
-    let core_count = app.core_count.max(1);
-
-    // The usage gauge and health badge always read as a percentage of total
-    // system CPU capacity, regardless of `cpu_view_mode` below, so the bar
-    // stays a stable, at-a-glance "how much of the machine" reading instead
-    // of changing meaning (or getting stuck maxed-out past 1 core's worth of
-    // usage) when the mode is toggled.
-    let cpu_total_ratio = app.cpu_current / 100.0 / core_count as f32;
-    let cpu_bar_label = format!("{:.1}%", cpu_total_ratio * 100.0);
-    let cpu_badge = health_badge((cpu_total_ratio * 100.0) as f64);
+    // The usage gauge and health badge read on the same percent-of-one-core
+    // basis as the value/peak text above (can exceed 100% on a busy
+    // multi-threaded process), so all the numbers on this panel agree — the
+    // bar itself still visually clamps at a full 100% fill past that point
+    // (see `draw_bar`'s `ratio.clamp`).
+    let cpu_ratio = app.cpu_current / 100.0;
+    let cpu_bar_label = format!("{:.1}%", app.cpu_current);
+    let cpu_badge = health_badge(app.cpu_current as f64);
 
     let peak_in_window_pct = cpu_history.iter().copied().max().unwrap_or(0) as f64;
 
@@ -273,7 +271,7 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
         time_labels.clone(),
         cpu_peak_label,
         cpu_badge,
-        cpu_total_ratio,
+        cpu_ratio,
         cpu_bar_label,
         CPU_COLOR,
     );
