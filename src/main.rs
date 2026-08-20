@@ -132,7 +132,11 @@ fn run_dashboard(
     let exe_path_buf;
     let started_at_unix_secs;
     {
-        let process = sys.process(pid).expect("resolved pid must exist");
+        let Some(process) = sys.process(pid) else {
+            drop(guard);
+            eprintln!("error: process exited before monitoring could start");
+            return ExitCode::from(3);
+        };
         process_name = process.name().to_string_lossy().into_owned();
         exe_path_buf = process.exe().map(|p| p.to_path_buf());
         exe_path = exe_path_buf
