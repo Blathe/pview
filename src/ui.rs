@@ -8,7 +8,9 @@ use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Sparkline};
 use sysinfo::ProcessStatus;
 
 use crate::app::{App, CpuViewMode};
-use crate::config::{APP_VERSION, BYTES_PER_MB, CPU_RELATIVE_AXIS_HEADROOM, HISTORY_LEN};
+use crate::config::{
+    APP_VERSION, BYTES_PER_MB, CPU_RELATIVE_AXIS_HEADROOM, HISTORY_LEN, MEM_TREND_WINDOW_SECS,
+};
 
 const CPU_COLOR: Color = Color::Rgb(59, 130, 246); // blue
 const MEM_COLOR: Color = Color::Rgb(249, 115, 22); // orange
@@ -341,7 +343,7 @@ fn format_mem_trend(rate_mb_per_hr: f32, elapsed: Duration) -> String {
         "▼"
     };
     let rate_text = format!("{arrow} {rate_mb_per_hr:+.1} MB/hr");
-    if elapsed.as_secs() < 3600 {
+    if elapsed.as_secs() < MEM_TREND_WINDOW_SECS {
         let minutes = (elapsed.as_secs() / 60).max(1);
         format!("{rate_text} ({minutes}m)")
     } else {
