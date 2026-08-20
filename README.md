@@ -18,7 +18,7 @@ Built with [ratatui](https://github.com/ratatui-org/ratatui), [crossterm](https:
 - **Process info** — status, PID, start time, uptime, and executable path.
 - **Interactive process picker** — run `pview` with no arguments to fuzzy-search running processes and pick one interactively, no need to know the exact name or PID up front. Shows live CPU%/MEM per process, sorted alphabetically by name so rows don't jump around as usage changes.
 - **Pause and reset** — freeze the display to inspect a moment, or clear the graphs and start a fresh window without restarting.
-- **Configurable refresh rate** — default 1s, tune it down for a more responsive view.
+- **Configurable refresh rate** — default 1s, configurable from 250ms to 1s.
 
 ## Installation
 
@@ -44,7 +44,7 @@ pview explorer.exe
 # Monitor by PID
 pview 12345
 
-# Custom refresh interval (milliseconds)
+# Custom refresh interval (250-1000 milliseconds)
 pview explorer.exe --interval 250
 pview explorer.exe -i 250
 ```

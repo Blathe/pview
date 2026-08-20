@@ -32,8 +32,8 @@ struct TerminalGuard {
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
-        let _ = disable_raw_mode();
-        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
+        let _ = self.terminal.show_cursor();
+        restore_terminal();
     }
 }
 
@@ -132,7 +132,11 @@ fn run_dashboard(
     let exe_path_buf;
     let started_at_unix_secs;
     {
-        let process = sys.process(pid).expect("resolved pid must exist");
+        let Some(process) = sys.process(pid) else {
+            drop(guard);
+            eprintln!("error: process exited before monitoring could start");
+            return ExitCode::from(3);
+        };
         process_name = process.name().to_string_lossy().into_owned();
         exe_path_buf = process.exe().map(|p| p.to_path_buf());
         exe_path = exe_path_buf
@@ -226,16 +230,29 @@ fn run(
 
 fn init_terminal() -> io::Result<Terminal<CrosstermBackend<Stdout>>> {
     enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    Terminal::new(CrosstermBackend::new(stdout))
+
+    let terminal = (|| {
+        let mut stdout = io::stdout();
+        execute!(stdout, EnterAlternateScreen)?;
+        Terminal::new(CrosstermBackend::new(stdout))
+    })();
+
+    if terminal.is_err() {
+        restore_terminal();
+    }
+
+    terminal
+}
+
+fn restore_terminal() {
+    let _ = disable_raw_mode();
+    let _ = execute!(io::stdout(), LeaveAlternateScreen);
 }
 
 fn install_panic_hook() {
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
-        let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        restore_terminal();
         original_hook(panic_info);
     }));
 }

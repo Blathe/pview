@@ -8,7 +8,9 @@ use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Sparkline};
 use sysinfo::ProcessStatus;
 
 use crate::app::{App, CpuViewMode};
-use crate::config::{APP_VERSION, BYTES_PER_MB, CPU_RELATIVE_AXIS_HEADROOM, HISTORY_LEN};
+use crate::config::{
+    APP_VERSION, BYTES_PER_MB, CPU_RELATIVE_AXIS_HEADROOM, HISTORY_LEN, MEM_TREND_WINDOW_SECS,
+};
 
 const CPU_COLOR: Color = Color::Rgb(59, 130, 246); // blue
 const MEM_COLOR: Color = Color::Rgb(249, 115, 22); // orange
@@ -189,7 +191,8 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
         .split(area);
 
     let window_secs = HISTORY_LEN as f64 * app.tick_interval.as_secs_f64();
-    let time_labels = (format!("{window_secs:.0}s"), "0s".to_string());
+    let window_label = format!("{window_secs:.0}s");
+    let time_labels = (window_label.clone(), "0s".to_string());
 
     let cpu_history: Vec<u64> = app
         .cpu_history
@@ -227,7 +230,7 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
             // `cpu_peak` shown by the other two modes — those are frequently
             // different numbers, so this is labeled distinctly to avoid
             // implying it's the same reading.
-            format!("60s peak {peak_in_window_pct:.1}%"),
+            format!("{window_label} peak {peak_in_window_pct:.1}%"),
         ),
     };
 
@@ -340,7 +343,7 @@ fn format_mem_trend(rate_mb_per_hr: f32, elapsed: Duration) -> String {
         "▼"
     };
     let rate_text = format!("{arrow} {rate_mb_per_hr:+.1} MB/hr");
-    if elapsed.as_secs() < 3600 {
+    if elapsed.as_secs() < MEM_TREND_WINDOW_SECS {
         let minutes = (elapsed.as_secs() / 60).max(1);
         format!("{rate_text} ({minutes}m)")
     } else {
