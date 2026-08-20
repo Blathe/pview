@@ -43,7 +43,6 @@ pub struct App {
     pub exe_path: String,
     pub started_at_unix_secs: u64,
     pub mem_total_mb: u64,
-    pub core_count: usize,
     pub tick_interval: Duration,
 
     pub cpu_view_mode: CpuViewMode,
@@ -93,7 +92,6 @@ impl App {
         exe_path: String,
         started_at_unix_secs: u64,
         mem_total_mb: u64,
-        core_count: usize,
         tick_interval: Duration,
         initial: Sample,
     ) -> Self {
@@ -104,7 +102,6 @@ impl App {
             exe_path,
             started_at_unix_secs,
             mem_total_mb,
-            core_count,
             tick_interval,
 
             cpu_view_mode: CpuViewMode::PercentOfTotal,
@@ -273,7 +270,6 @@ mod tests {
             "/test".to_string(),
             0,
             0,
-            1,
             Duration::from_millis(100),
             sample(),
         )
