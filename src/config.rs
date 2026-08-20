@@ -1,4 +1,6 @@
 pub const DEFAULT_INTERVAL_MS: u64 = 1000;
+pub const MIN_INTERVAL_MS: u64 = 250;
+pub const MAX_INTERVAL_MS: u64 = 1000;
 pub const HISTORY_LEN: usize = 60;
 
 /// Spacing between samples in `App::mem_trend_samples`, the long-lived
