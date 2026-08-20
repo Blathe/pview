@@ -189,7 +189,8 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
         .split(area);
 
     let window_secs = HISTORY_LEN as f64 * app.tick_interval.as_secs_f64();
-    let time_labels = (format!("{window_secs:.0}s"), "0s".to_string());
+    let window_label = format!("{window_secs:.0}s");
+    let time_labels = (window_label.clone(), "0s".to_string());
 
     let cpu_history: Vec<u64> = app
         .cpu_history
@@ -227,7 +228,7 @@ fn draw_cpu_mem_row(frame: &mut Frame, area: Rect, app: &App) {
             // `cpu_peak` shown by the other two modes — those are frequently
             // different numbers, so this is labeled distinctly to avoid
             // implying it's the same reading.
-            format!("60s peak {peak_in_window_pct:.1}%"),
+            format!("{window_label} peak {peak_in_window_pct:.1}%"),
         ),
     };
 
